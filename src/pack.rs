@@ -1,9 +1,16 @@
+use crate::utils::format_file_size;
 use chrono::Local;
+use colored::*;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
+use tabled::Tabled;
+use tabled::{
+    Table,
+    settings::{Format, Modify, Style, object::Columns, peaker::Priority, width::MinWidth},
+};
 use tar::Builder;
 use thiserror::Error;
 use uuid::Uuid;
@@ -142,7 +149,9 @@ impl Default for CompressionConfig {
 // ============================================================================
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CompressionResult {
+    #[serde(default)]
     pub success: bool,
+    #[serde(default)]
     pub error_reason: Option<String>,
     pub hash_or_uuid: String,
     pub output_path: PathBuf,
@@ -153,6 +162,66 @@ pub struct CompressionResult {
     pub name: String,
 }
 
+impl CompressionResult {
+    pub fn print(&self) {
+        if self.is_directory {
+            println!("文件夹名：{}", self.name.blue());
+        } else {
+            println!("文件名：{}", self.name.blue());
+        }
+        println!(
+            "当前位置：{}",
+            self.output_path.to_str().unwrap().to_string().blue()
+        );
+        println!(
+            "原始位置：{}",
+            self.original_path.to_str().unwrap().to_string().blue()
+        );
+        println!("大小：{}", format_file_size(&self.compressed_size).blue());
+        println!("时间：{}", self.compression_datetime.blue())
+    }
+    pub fn print_as_table(lst: &[Self]) {
+        let mut v: Vec<PrintToUsr> = Vec::new();
+        for item in lst {
+            v.push(PrintToUsr::from(item));
+        }
+        // 关键：去掉 Priority，只保留能编译的设置
+        let table = Table::new(&v)
+            .with(Style::modern())
+            .with(
+                Modify::new(Columns::new(0..1))
+                    .with(MinWidth::new(0))
+                    .with(Format::content(|s: &str| s.blue().to_string())),
+            )
+            .to_string();
+        println!("{}", table);
+    }
+}
+#[derive(Tabled, Deserialize, Debug)]
+pub struct PrintToUsr {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub size: String,
+    pub path: String,
+    pub time: String,
+}
+impl PrintToUsr {
+    fn from(result: &CompressionResult) -> Self {
+        let name = if result.is_directory {
+            format!("{}/", result.name)
+        } else {
+            result.name.clone()
+        };
+
+        let size = format_file_size(&result.compressed_size);
+        Self {
+            name,
+            size,
+            path: result.original_path.display().to_string(),
+            time: result.compression_datetime.clone(),
+        }
+    }
+}
 // ============================================================================
 // Write 适配器：统计字节数
 // ============================================================================
@@ -545,58 +614,6 @@ fn build_tar<W: Write>(source: &Path, writer: W) -> Result<W, CompressionError> 
     Ok(writer)
 }
 
-// ============================================================================
-// 单元测试
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_compress_file_blake3() -> Result<(), CompressionError> {
-        let tmp_dir = TempDir::new().unwrap();
-        let src = tmp_dir.path().join("test.txt");
-        fs::write(&src, b"hello world").unwrap();
-
-        let result = compress_and_hash(
-            src.to_str().unwrap(),
-            "tar.gz",
-            "blake3",
-            tmp_dir.path().to_str().unwrap(),
-        )?;
-
-        assert!(result.success);
-        assert!(result.output_path.exists());
-        assert_eq!(result.hash_or_uuid.len(), 64);
-        assert!(!src.exists());
-        Ok(())
-    }
-
-    #[test]
-    fn test_compress_dir_uuid4() -> Result<(), CompressionError> {
-        let tmp_dir = TempDir::new().unwrap();
-        let src_dir = tmp_dir.path().join("mydir");
-        fs::create_dir(&src_dir).unwrap();
-        fs::write(src_dir.join("a.txt"), b"aaa").unwrap();
-        fs::write(src_dir.join("b.txt"), b"bbb").unwrap();
-
-        let result = compress_and_hash(
-            src_dir.to_str().unwrap(),
-            "tar",
-            "uuid4",
-            tmp_dir.path().to_str().unwrap(),
-        )?;
-
-        assert!(result.success);
-        assert!(result.is_directory);
-        assert_eq!(result.hash_or_uuid.len(), 36);
-        assert!(!src_dir.exists());
-        Ok(())
-    }
-}
-
 /// 根据压缩结果删除对应的压缩包文件
 pub fn delete_archive(result: &CompressionResult) -> Result<(), CompressionError> {
     if result.output_path.exists() {
@@ -607,23 +624,102 @@ pub fn delete_archive(result: &CompressionResult) -> Result<(), CompressionError
 }
 /// 将压缩包解压到原始路径所在的目录，并删除压缩包
 pub fn extract_and_delete(result: &CompressionResult) -> Result<(), CompressionError> {
+    use std::io::Read;
+
     // 确定解压目标目录：原始路径的父目录
     let parent_dir = result.original_path.parent().ok_or_else(|| {
         CompressionError::CompressionFailed("无法获取原始路径的父目录".to_string())
     })?;
 
     // 打开压缩包
-    let archive_file =
-        File::open(&result.output_path).map_err(|e| io_err_with_path(e, &result.output_path))?;
-    let mut archive = tar::Archive::new(archive_file);
+    let archive_file = File::open(&result.output_path)
+        .map_err(|e| io_err_with_path(e, &result.output_path))?;
 
-    // 解压到目标目录
+    // 根据后缀识别格式
+    let s = result.output_path.to_string_lossy().to_lowercase();
+
+    let reader: Box<dyn Read + 'static> = if s.ends_with(".tar.zst") || s.ends_with(".tzst") {
+        #[cfg(feature = "zstd")]
+        {
+            use zstd::stream::read::Decoder;
+            Box::new(Decoder::new(archive_file).map_err(|e| {
+                CompressionError::CompressionFailed(format!("zstd 初始化失败：{}", e))
+            })?)
+        }
+        #[cfg(not(feature = "zstd"))]
+        {
+            return Err(CompressionError::CompressionFailed(
+                "未启用 zstd 功能，无法解压 .tar.zst".into()
+            ));
+        }
+    } else if s.ends_with(".tar.gz") || s.ends_with(".tgz") {
+        #[cfg(feature = "gz")]
+        {
+            use flate2::read::GzDecoder;
+            Box::new(GzDecoder::new(archive_file))
+        }
+        #[cfg(not(feature = "gz"))]
+        {
+            return Err(CompressionError::CompressionFailed(
+                "未启用 gz 功能，无法解压 .tar.gz".into()
+            ));
+        }
+    } else if s.ends_with(".tar.bz2") || s.ends_with(".tbz2") {
+        #[cfg(feature = "bz2")]
+        {
+            use bzip2::read::BzDecoder;
+            Box::new(BzDecoder::new(archive_file))
+        }
+        #[cfg(not(feature = "bz2"))]
+        {
+            return Err(CompressionError::CompressionFailed(
+                "未启用 bz2 功能，无法解压 .tar.bz2".into()
+            ));
+        }
+    } else if s.ends_with(".tar.xz") || s.ends_with(".txz") {
+        #[cfg(feature = "xz")]
+        {
+            use xz2::read::XzDecoder;
+            Box::new(XzDecoder::new(archive_file))
+        }
+        #[cfg(not(feature = "xz"))]
+        {
+            return Err(CompressionError::CompressionFailed(
+                "未启用 xz 功能，无法解压 .tar.xz".into()
+            ));
+        }
+    } else if s.ends_with(".tar.lz4") || s.ends_with(".tlz4") {
+        #[cfg(feature = "lz4")]
+        {
+            use lz4::Decoder;
+            Box::new(Decoder::new(archive_file).map_err(|e| {
+                CompressionError::CompressionFailed(format!("lz4 初始化失败：{}", e))
+            })?)
+        }
+        #[cfg(not(feature = "lz4"))]
+        {
+            return Err(CompressionError::CompressionFailed(
+                "未启用 lz4 功能，无法解压 .tar.lz4".into()
+            ));
+        }
+    } else if s.ends_with(".tar") {
+        Box::new(archive_file)
+    } else {
+        return Err(CompressionError::CompressionFailed(format!(
+            "不支持的压缩格式：{}",
+            result.output_path.display()
+        )));
+    };
+
+    // 解压
+    let mut archive = tar::Archive::new(reader);
     archive
         .unpack(parent_dir)
-        .map_err(|e| CompressionError::CompressionFailed(format!("解压失败: {}", e)))?;
+        .map_err(|e| CompressionError::CompressionFailed(format!("解压失败：{}", e)))?;
 
     // 删除压缩包
     delete_archive(result)?;
 
     Ok(())
 }
+

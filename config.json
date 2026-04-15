@@ -3,7 +3,7 @@
     "author": "ywnh1",
     "compression_tool": "tar",
     "index_tool": "uuid4",
-    "recycle": "/opt/del/.recycle",
+    "recycle": "/storage/emulated/0/用户/tmp/",
     "options_supported": {
         "compression_tool": [
             "tar",

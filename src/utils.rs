@@ -6,7 +6,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-
+use termimad::*;
 const KB: u64 = 1u64 << 10;
 const MB: u64 = 1u64 << 20;
 const GB: u64 = 1u64 << 30;
@@ -30,25 +30,126 @@ pub struct OptionsSupported {
 }
 
 /// 加载配置文件，查找策略：
-/// 1. 优先使用环境变量 `APP_CONFIG` 指定的路径
-/// 2. 否则从当前工作目录开始，向上递归查找 `config.json`
-/// 3. 若到达文件系统根目录仍未找到，返回错误
 pub fn load_conf() -> Result<Config, Box<dyn std::error::Error>> {
-    // 1. 环境变量优先
-    if let Ok(env_path) = env::var("APP_CONFIG") {
-        let path = Path::new(&env_path);
-        if path.exists() {
-            return load_from_path(path);
-        }
-    }
-
-    // 2. 向上查找 config.json
     let config_path = find_config_upwards("config.json")?;
     load_from_path(&config_path)
 }
 
 /// 从当前目录开始向上查找指定文件，返回第一个匹配的路径
-fn find_config_upwards(filename: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn ensure_config_and_info() -> Result<(), Box<dyn std::error::Error>> {
+    if let Err(_) = find_config_upwards("config.json") {
+        let content = r#"{
+    "version": "0.1.0",
+    "author": "ywnh1",
+    "compression_tool": "tar",
+    "index_tool": "uuid4",
+    "recycle": "/opt/del/.recycle",
+    "options_supported": {
+        "compression_tool": [
+            "tar",
+            "tar.gz",
+            "tgz",
+            "tar.xz",
+            "txz",
+            "tar.bz2",
+            "tbz2",
+            "tar.zst",
+            "tzst",
+            "tar.lz4",
+            "tlz4"
+        ],
+        "index_tool": [
+            "blake3",
+            "uuid4"
+        ]
+    },
+    "disabled_list": [
+        "/usr/lib64",
+        "/lib",
+        "/usr/lib/libc.so",
+        "/etc/pam.d",
+        "/usr/lib/libdl.so",
+        "/etc/bash.bashrc",
+        "/etc/nsswitch.conf",
+        "/var/lib",
+        "/var/run",
+        "/etc/gshadow",
+        "/etc/rc.d",
+        "/usr/bin/sudo",
+        "/etc/crypttab",
+        "/etc/fstab",
+        "/etc/hosts",
+        "/var/log",
+        "/etc/resolv.conf",
+        "..",
+        "/etc/sudoers",
+        "/lib64",
+        "/run",
+        "/boot/grub",
+        "/usr/bin/passwd",
+        "/sbin/init",
+        "/etc/shadow",
+        "/lib/ld-linux-aarch64.so.1",
+        "/usr/local",
+        "/dev/null",
+        "/boot/initramfs",
+        "/usr/lib",
+        "/proc",
+        "/lib/ld-linux.so.3",
+        "/sbin",
+        "/usr",
+        "/etc/passwd",
+        "/etc/sudoers.d",
+        "/etc/hostname",
+        "/usr/bin/env",
+        "/etc/profile",
+        "/bin",
+        "/etc/login.defs",
+        "/lib64/ld-linux-x86-64.so.2",
+        "/sys",
+        "/bin/bash",
+        "/root/code",
+        ".",
+        "/boot",
+        "/dev/tty",
+        "/etc/systemd",
+        "/etc/init.d",
+        "/boot/vmlinuz",
+        "/usr/sbin",
+        "/etc/group",
+        "/var",
+        "/root",
+        "/sbin/poweroff",
+        "/usr/bin/login",
+        "/bin/sh",
+        "/etc/profile.d",
+        "/usr/lib/libpthread.so",
+        "/usr/bin",
+        "/boot/efi",
+        "/dev/console",
+        "/",
+        "/etc",
+        "/etc/securetty",
+        "/dev/zero",
+        "/sbin/reboot",
+        "/lib/libc.so",
+        "/sbin/halt",
+        "/bin/su",
+        "/lib/libc.so.6",
+        "/dev"
+    ]
+}"#;
+        fs::write("config.json", content)?;
+        let path = "/opt/del/.recycle";
+        if !Path::new(path).exists() {
+            fs::create_dir_all(Path::new(path).parent().unwrap())?;
+            fs::write(path, "[]")?;
+        }
+    }
+    Ok(())
+}
+
+pub fn find_config_upwards(filename: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let mut current_dir = env::current_dir()?;
 
     loop {
@@ -129,6 +230,11 @@ pub fn append_result_to_json(
     Ok(())
 }
 
+pub fn print_md(md: &str) {
+    // r#""#
+    let skin = MadSkin::default();
+    skin.print_text(md);
+}
 /// 根据 name 查询对应的 CompressionResult
 /// - 返回 `Ok(Some(result))` 表示找到
 /// - 返回 `Ok(None)` 表示未找到
@@ -187,4 +293,21 @@ pub fn delete_result_by_name(json_path: &Path, name: &str) -> Result<bool, io::E
     fs::write(json_path, json_str)?;
 
     Ok(true)
+}
+pub fn get_all_result(
+    json_path: &Path,
+) -> Result<Vec<CompressionResult>, io::Error> {
+    if !json_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(json_path)?;
+    if content.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let results: Vec<CompressionResult> = serde_json::from_str(&content)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    Ok(results)
 }

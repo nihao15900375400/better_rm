@@ -1,3 +1,15 @@
+// Copyright (c) 2026 ywnh1
+//
+// del is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan
+// PSL v2. You may obtain a copy of Mulan PSL v2 at:
+//         http://license.coscl.org.cn/MulanPSL2
+//
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY
+// KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+
 use crate::utils::format_file_size;
 use chrono::Local;
 use colored::*;
@@ -632,8 +644,8 @@ pub fn extract_and_delete(result: &CompressionResult) -> Result<(), CompressionE
     })?;
 
     // 打开压缩包
-    let archive_file = File::open(&result.output_path)
-        .map_err(|e| io_err_with_path(e, &result.output_path))?;
+    let archive_file =
+        File::open(&result.output_path).map_err(|e| io_err_with_path(e, &result.output_path))?;
 
     // 根据后缀识别格式
     let s = result.output_path.to_string_lossy().to_lowercase();
@@ -649,7 +661,7 @@ pub fn extract_and_delete(result: &CompressionResult) -> Result<(), CompressionE
         #[cfg(not(feature = "zstd"))]
         {
             return Err(CompressionError::CompressionFailed(
-                "未启用 zstd 功能，无法解压 .tar.zst".into()
+                "未启用 zstd 功能，无法解压 .tar.zst".into(),
             ));
         }
     } else if s.ends_with(".tar.gz") || s.ends_with(".tgz") {
@@ -661,7 +673,7 @@ pub fn extract_and_delete(result: &CompressionResult) -> Result<(), CompressionE
         #[cfg(not(feature = "gz"))]
         {
             return Err(CompressionError::CompressionFailed(
-                "未启用 gz 功能，无法解压 .tar.gz".into()
+                "未启用 gz 功能，无法解压 .tar.gz".into(),
             ));
         }
     } else if s.ends_with(".tar.bz2") || s.ends_with(".tbz2") {
@@ -673,7 +685,7 @@ pub fn extract_and_delete(result: &CompressionResult) -> Result<(), CompressionE
         #[cfg(not(feature = "bz2"))]
         {
             return Err(CompressionError::CompressionFailed(
-                "未启用 bz2 功能，无法解压 .tar.bz2".into()
+                "未启用 bz2 功能，无法解压 .tar.bz2".into(),
             ));
         }
     } else if s.ends_with(".tar.xz") || s.ends_with(".txz") {
@@ -685,7 +697,7 @@ pub fn extract_and_delete(result: &CompressionResult) -> Result<(), CompressionE
         #[cfg(not(feature = "xz"))]
         {
             return Err(CompressionError::CompressionFailed(
-                "未启用 xz 功能，无法解压 .tar.xz".into()
+                "未启用 xz 功能，无法解压 .tar.xz".into(),
             ));
         }
     } else if s.ends_with(".tar.lz4") || s.ends_with(".tlz4") {
@@ -699,7 +711,7 @@ pub fn extract_and_delete(result: &CompressionResult) -> Result<(), CompressionE
         #[cfg(not(feature = "lz4"))]
         {
             return Err(CompressionError::CompressionFailed(
-                "未启用 lz4 功能，无法解压 .tar.lz4".into()
+                "未启用 lz4 功能，无法解压 .tar.lz4".into(),
             ));
         }
     } else if s.ends_with(".tar") {
@@ -722,4 +734,3 @@ pub fn extract_and_delete(result: &CompressionResult) -> Result<(), CompressionE
 
     Ok(())
 }
-

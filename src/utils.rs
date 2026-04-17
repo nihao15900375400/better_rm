@@ -294,9 +294,7 @@ pub fn delete_result_by_name(json_path: &Path, name: &str) -> Result<bool, io::E
 
     Ok(true)
 }
-pub fn get_all_result(
-    json_path: &Path,
-) -> Result<Vec<CompressionResult>, io::Error> {
+pub fn get_all_result(json_path: &Path) -> Result<Vec<CompressionResult>, io::Error> {
     if !json_path.exists() {
         return Ok(Vec::new());
     }

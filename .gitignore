@@ -1,2 +1,6 @@
 /target
 /config.json
+/app.db
+/.idea
+/.env
+

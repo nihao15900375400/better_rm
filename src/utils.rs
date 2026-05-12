@@ -56,32 +56,7 @@ pub fn is_nano_installed() -> bool {
 pub fn is_cat_installed() -> bool {
     which("cat").is_ok()
 }
-pub fn create_config(path: PathBuf) -> Result<(), Box<dyn Error>> {
-    if let Some(p) = path.parent() {
-        std::fs::create_dir_all(p)?;
-    }
-    println!("Recreating: {}", path.display());
-    std::fs::write(path, constants::CONFIG_JSON_DATA)?;
-    println!("done.");
-    Ok(())
-}
 
-pub async fn create_database(pool:SqlitePool) -> Result<(), Box<dyn Error>> {
-    println!("Recreating: {}",constants::DATABASE);
-    sqlx::query!(
-        "DROP TABLE IF EXISTS trash;
-        CREATE TABLE IF NOT EXISTS trash (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            hash TEXT NOT NULL,
-            original_path TEXT NOT NULL,
-            present_path TEXT NOT NULL,
-            archive_tool TEXT NOT NULL,
-            size INTEGER NOT NULL,
-            time TEXT NOT NULL
-        )"
-    ).execute(&pool)
-    .await?;
-    println!("done.");
-    Ok(())
-}
+
+
+

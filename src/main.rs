@@ -1,10 +1,17 @@
 mod utils;
 mod constants;
+mod conf;
+mod db;
+mod archive_and_hash;
 
+use std::process::Command;
 use clap::Parser;
 use std::path::{Path,PathBuf};
 use std::error::Error;
 use utils::*;
+use conf::*;
+use db::*;
+use archive_and_hash::*;
 use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
 
@@ -80,17 +87,35 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(),Box<dyn Error>>{
     let args = Args::parse();
+    
     let cfg_path: PathBuf = to_abs_path(constants::CONFIG);
     let db_path: PathBuf = to_abs_path(constants::DATABASE);
-    let pool = SqlitePool::connect(&format!("sqlite:{}",to_abs_path(constants::DATABASE).to_string_lossy())).await.unwrap();
-    if args.init{
-        init(cfg_path,db_path,pool).await;
+    
+    if let Some(p) = cfg_path.parent() {
+        std::fs::create_dir_all(p);
     }
+    
+    let pool = SqlitePool::connect(&format!("sqlite:{}",to_abs_path(constants::DATABASE).to_string_lossy())).await.unwrap();
+    let cfg = load_config(&cfg_path).unwrap();
+
+    if let Some(p) = PathBuf::from(&cfg.trash).parent() {
+        std::fs::create_dir_all(p);
+    }
+    
+    if args.init{
+        init(&cfg_path,&db_path,&pool,&cfg).await;
+    }
+    if args.config{
+        config(&cfg_path);
+    }
+    if args.empty{
+        empty(&pool,&cfg).await;
+    }
+    Ok(())
 }
-async fn init(cfg_path:PathBuf,db_path:PathBuf,pool:SqlitePool) -> Result<(),Box<dyn Error>> {
-    println!("{}",cfg_path.is_file());
+async fn init(cfg_path:&PathBuf,db_path:&PathBuf,pool:&SqlitePool,cfg:&Config) -> Result<(),Box<dyn Error>> {
     if cfg_path.is_file(){
         match input("Config file is exist, cover it?(Y/n)"){
             Ok(s) if s.eq_ignore_ascii_case("y")=> create_config(cfg_path)?,
@@ -102,7 +127,7 @@ async fn init(cfg_path:PathBuf,db_path:PathBuf,pool:SqlitePool) -> Result<(),Box
     }
     if db_path.is_file(){
         match input("Database file is exist, cover it?(Y/n)"){
-            Ok(s) if s.eq_ignore_ascii_case("y")=> create_database(pool).await?,
+            Ok(s) if s.eq_ignore_ascii_case("y")=> empty(pool,cfg).await,
             Err(e) => return Err(Box::new(e)),
             Ok(_) => {},
         }
@@ -110,4 +135,26 @@ async fn init(cfg_path:PathBuf,db_path:PathBuf,pool:SqlitePool) -> Result<(),Box
         create_database(pool).await?;
     }
     Ok(())
+}
+
+fn config(cfg_path: &PathBuf) {
+    if is_nano_installed() {
+        let _ = Command::new("nano")
+            .arg(&cfg_path)
+            .status();
+    } else {
+        println!("nano is not installed");
+        println!("config file is at {}", cfg_path.display());
+    }
+}
+
+async fn empty(pool:&SqlitePool,cfg:&Config){
+    println!("This may empty your trash in which files will be deleted forever");
+    if let Ok(s) = input("Do you really want to do that?(Y/n)") {
+    if s.eq_ignore_ascii_case("y") {
+        create_database(pool).await.unwrap();
+        std::fs::remove_dir_all(&cfg.trash).unwrap();
+        std::fs::create_dir_all(&cfg.trash).unwrap();
+    }
+}
 }

@@ -14,6 +14,7 @@ use db::*;
 use archive_and_hash::*;
 use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
+use minus::{Pager, page_all};
 
 
 
@@ -39,14 +40,14 @@ struct Args {
     /// 
     /// If no value is provided, restores the most recently deleted file
     /// Accepts either file name or trash entry ID
-    #[arg(short = 'u', long = "undo", num_args = 0..=1)]
-    undo: Option<String>,
+    #[arg(short = 'u', long = "undo", num_args = 0..)]
+    undo: Option<Vec<String>>,
 
     /// Permanently delete a file from the trash
     /// 
     /// Accepts either file name or trash entry ID
-    #[arg(short = 'd', long = "delete", num_args = 0..=1)]
-    delete: Option<String>,
+    #[arg(short = 'd', long = "delete", num_args = 0..)]
+    delete: Option<Vec<String>>,
 
     /// Operate recursively on directories
     /// 
@@ -55,6 +56,8 @@ struct Args {
     recurse: bool,
 
     /// Bypass trash and permanently delete files using system rm command
+    /// If you want to pass in other args, write them after `--`
+    /// Usage: del -rf -- -i example/
     #[arg(short = 'f', long = "force")]
     force: bool,
 
@@ -63,13 +66,26 @@ struct Args {
     list: bool,
 
     /// Search and display files in trash matching the given pattern
+    /// Use `%` to express any sequence of characters.
+    /// Use `_` to express any single character.
+    /// Usage: --select "%.txt"
     #[arg(short = 's', long = "select", num_args = 0..=1)]
     select: Option<String>,
 
-    /// Filter files by specified metadata field
-    /// 
-    /// Supported fields: name, id, hash, time, original-dir
-    /// Usage: --select-from name "*.txt"
+/// Filter records by specifying a database field with fuzzy matching.
+///
+/// Supported filter fields: name, id, hash, time, original-path, size
+///
+/// Wildcard syntax:
+/// - `%`  Matches any sequence of zero or more characters
+/// - `_`  Matches exactly one single arbitrary character
+///
+/// Escape rule:
+/// Use backslash `\` to escape literal `%` and `_`,
+/// so they are treated as normal characters instead of wildcards.
+///
+/// Example usage:
+/// --select-from original-path "%path\_to\_the\_file/___.txt"
     #[arg(long = "select-from", num_args = 0..=2)]
     select_from: Option<Vec<String>>,
 
@@ -79,8 +95,6 @@ struct Args {
     #[arg(short = 'c', long = "config")]
     config: bool,
 
-    /// Empty the entire trash (permanently delete all files)
-    /// 
     /// Requires confirmation unless used with --force
     #[arg(short = 'e', long = "empty")]
     empty: bool,
@@ -89,6 +103,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(),Box<dyn Error>>{
     let args = Args::parse();
+    println!("{:#?}",args);
     
     let cfg_path: PathBuf = to_abs_path(constants::CONFIG);
     let db_path: PathBuf = to_abs_path(constants::DATABASE);
@@ -96,28 +111,48 @@ async fn main() -> Result<(),Box<dyn Error>>{
     if let Some(p) = cfg_path.parent() {
         std::fs::create_dir_all(p);
     }
-    
-    let pool = SqlitePool::connect(&format!("sqlite:{}",to_abs_path(constants::DATABASE).to_string_lossy())).await.unwrap();
-    let cfg = load_config(&cfg_path).unwrap();
+    if args.init{
+        init(&cfg_path,&db_path).await;
+        return Ok(());
+    }
+    let pool = SqlitePool::connect(&format!("sqlite:{}",to_abs_path(constants::DATABASE).to_string_lossy())).await.unwrap_or_else(|_| {eprintln!("there's no config file existing, use `del --init` to create");std::process::exit(1)});
+    let cfg = load_config(&cfg_path).unwrap_or_else(|_| {eprintln!("there's no config file existing, use `del --init` to create");std::process::exit(1)});
 
-    if let Some(p) = PathBuf::from(&cfg.trash).parent() {
+    if let Some(p) = to_abs_path(&cfg.trash).parent() {
         std::fs::create_dir_all(p);
     }
     
-    if args.init{
-        init(&cfg_path,&db_path,&pool,&cfg).await;
-    }
     if args.config{
         config(&cfg_path);
+        return Ok(());
     }
     if args.empty{
         empty(&pool,&cfg).await;
+        return Ok(());
+    }
+    if args.force {
+    let mut cmd = Command::new("rm");
+    if args.recurse {
+        cmd.arg("-r");
+    }
+    cmd.args(args.path);
+    let _ = cmd.status();
+    return Ok(());
+    }
+    if args.list{
+        list(&pool).await?;
+        return Ok(());
+    }
+    if !args.path.is_empty(){
+        
     }
     Ok(())
 }
-async fn init(cfg_path:&PathBuf,db_path:&PathBuf,pool:&SqlitePool,cfg:&Config) -> Result<(),Box<dyn Error>> {
+
+async fn init(cfg_path:&PathBuf,db_path:&PathBuf) -> Result<(),Box<dyn Error>> {
+    let pool = SqlitePool::connect(&format!("sqlite:{}",to_abs_path(constants::DATABASE).to_string_lossy())).await.unwrap();
     if cfg_path.is_file(){
-        match input("Config file is exist, cover it?(Y/n)"){
+        match input("Config file is exist, cover it?(Y/n) "){
             Ok(s) if s.eq_ignore_ascii_case("y")=> create_config(cfg_path)?,
             Err(e) => return Err(Box::new(e)),
             Ok(_) => {},
@@ -125,20 +160,22 @@ async fn init(cfg_path:&PathBuf,db_path:&PathBuf,pool:&SqlitePool,cfg:&Config) -
     }else{
         create_config(cfg_path)?;
     }
+    let cfg = load_config(&to_abs_path(constants::CONFIG))?;
     if db_path.is_file(){
-        match input("Database file is exist, cover it?(Y/n)"){
-            Ok(s) if s.eq_ignore_ascii_case("y")=> empty(pool,cfg).await,
+        match input("Database file is exist, cover it?(Y/n) "){
+            Ok(s) if s.eq_ignore_ascii_case("y")=> empty(&pool,&cfg).await,
             Err(e) => return Err(Box::new(e)),
             Ok(_) => {},
         }
     }else{
-        create_database(pool).await?;
+        create_database(&pool).await?;
     }
     Ok(())
 }
 
 fn config(cfg_path: &PathBuf) {
     if is_nano_installed() {
+        println!("cmd: `nano {}`",cfg_path.display());
         let _ = Command::new("nano")
             .arg(&cfg_path)
             .status();
@@ -153,8 +190,45 @@ async fn empty(pool:&SqlitePool,cfg:&Config){
     if let Ok(s) = input("Do you really want to do that?(Y/n)") {
     if s.eq_ignore_ascii_case("y") {
         create_database(pool).await.unwrap();
-        std::fs::remove_dir_all(&cfg.trash).unwrap();
-        std::fs::create_dir_all(&cfg.trash).unwrap();
+        let trash_path = to_abs_path(&cfg.trash);
+        std::fs::remove_dir_all(&trash_path);
+        std::fs::create_dir_all(&trash_path).unwrap();
     }
 }
 }
+
+async fn list(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut pager = Pager::new();
+    pager.set_prompt("List trash | press 'q' to exit")?;
+
+    let files = sqlx::query_as!(
+        Database,
+        "SELECT * FROM trash"
+    )
+    .fetch_all(pool)
+    .await?;
+    if files.is_empty() {
+        pager.push_str("It's empty\n")?;
+    } else {
+        pager.push_str(format!(
+        "{:<4} {:<8} {:<25} {:<8} {:<20}\n",
+        "id", "name", "original_path", "size", "time"
+    ))?;
+    pager.push_str("------------------------------------------------------------\n")?;
+        for row in files {
+            let size_str = format_size(row.size);
+            pager.push_str(&format!(
+                "{:<4} {:<8} {:<25} {:<8} {:<20}\n",
+                row.id,
+                row.name,
+                row.original_path,
+                size_str,
+                row.time
+            ))?;
+        }
+    }
+
+    page_all(pager)?;
+    Ok(())
+}
+

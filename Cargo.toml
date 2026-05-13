@@ -20,3 +20,4 @@ tar = "0.4.45"
 xz2 = "0.1.7"
 zstd = { version = "0.13.3", features = ["thin"] }
 which = "6.0"
+walkdir = "2"

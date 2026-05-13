@@ -57,6 +57,24 @@ pub fn is_cat_installed() -> bool {
     which("cat").is_ok()
 }
 
+pub fn format_size(size: i64) -> String {
+    const UNIT_BASE: f64 = 1024.0;
+    let units = ["B", "KB", "MB", "GB", "TB"];
+
+    let mut size_val = size as f64;
+    let mut unit_idx = 0;
+
+    while size_val >= UNIT_BASE && unit_idx < units.len() - 1 {
+        size_val /= UNIT_BASE;
+        unit_idx += 1;
+    }
+
+    if size_val.fract() < 1e-6 {
+        format!("{:.0}{}", size_val, units[unit_idx])
+    } else {
+        format!("{:.1}{}", size_val, units[unit_idx])
+    }
+}
 
 
 

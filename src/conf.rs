@@ -19,7 +19,7 @@ pub struct Config {
 }
 
 pub fn create_config(path: &PathBuf) -> Result<(), Box<dyn Error>> {
-    println!("Recreating: {}", path.display());
+    println!("Creating: {}", path.display());
     std::fs::write(path, CONFIG_JSON_DATA)?;
     println!("done.");
     Ok(())

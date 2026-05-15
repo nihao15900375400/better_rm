@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::io::{self, Read, Write};
 use crate::constants::*;
 use crate::utils::*;
-use crate::archive_and_hash::*;
+use crate::archive::*;
 use std::error::Error;
 use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
@@ -14,7 +14,6 @@ use serde::{Serialize, Deserialize};
 pub struct Config {
     pub trash: String,
     pub archive_tool: ArchiveTool,
-    pub hash_tool: HashTool,
     pub disable_list: Vec<String>
 }
 

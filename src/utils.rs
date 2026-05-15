@@ -7,6 +7,12 @@ use std::error::Error;
 use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
 use std::fs;
+use chrono::Local;
+
+
+pub fn now_time() -> String {
+    Local::now().format("%Y-%m-%d_%H:%M:%S").to_string()
+}
 
 pub fn input(msg: &str) -> Result<String, io::Error> {
     print!("{}", msg);

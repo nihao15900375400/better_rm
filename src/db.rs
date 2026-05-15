@@ -2,18 +2,18 @@ use std::path::{Path, PathBuf};
 use std::io::{self, Read, Write};
 use crate::constants;
 use crate::conf::*;
-use crate::archive_and_hash::*;
+use crate::archive::*;
 use std::error::Error;
 use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
 use std::fs;
 use serde::{Serialize, Deserialize};
 
+
 #[derive(Debug,sqlx::FromRow,Serialize, Deserialize,Clone)]
 pub struct Database{
     pub id: i64,
     pub name: String,
-    pub hash: String,
     pub original_path: String,
     pub present_path: String,
     pub archive_tool: ArchiveTool,
@@ -28,7 +28,6 @@ pub async fn create_database(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         CREATE TABLE IF NOT EXISTS trash (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
-            hash TEXT NOT NULL UNIQUE,
             original_path TEXT NOT NULL,
             present_path TEXT NOT NULL,
             archive_tool TEXT NOT NULL,
@@ -46,7 +45,6 @@ pub async fn insert(pool: &SqlitePool,row: &Database) -> Result<(), sqlx::Error>
 INSERT INTO trash
 (
     name,
-    hash,
     original_path,
     present_path,
     archive_tool,
@@ -54,9 +52,8 @@ INSERT INTO trash
     time
 )
 VALUES
-(?, ?, ?, ?, ?, ?, ?);
+(?, ?, ?, ?, ?, ?);
 "#,row.name,
-row.hash,
 row.original_path,
 row.present_path,
 row.archive_tool,
@@ -74,7 +71,6 @@ async fn select(
     let sql = match column {
         "name" => r#"SELECT * FROM trash WHERE name LIKE ?"#,
         "id" => r#"SELECT * FROM trash WHERE id LIKE ?"#,
-        "hash" => r#"SELECT * FROM trash WHERE hash LIKE ?"#,
         "time" => r#"SELECT * FROM trash WHERE time LIKE ?"#,
         "original-path" => r#"SELECT * FROM trash WHERE original_path LIKE ? ESCAPE '\'"#,
         "size" => r#"SELECT * FROM trash WHERE size LIKE ? ESCAPE '\'"#,

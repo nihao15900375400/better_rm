@@ -2,7 +2,7 @@ mod utils;
 mod constants;
 mod conf;
 mod db;
-mod archive_and_hash;
+mod archive;
 
 use std::process::Command;
 use clap::Parser;
@@ -11,10 +11,20 @@ use std::error::Error;
 use utils::*;
 use conf::*;
 use db::*;
-use archive_and_hash::*;
+use archive::*;
 use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
 use minus::{Pager, page_all};
+use tabled::{
+    Table, Tabled,
+    settings::{
+        Style, Width, Modify, Alignment,
+        object::{Columns, Cell, Rows},
+    },
+};
+
+
+
 
 
 
@@ -40,6 +50,8 @@ struct Args {
     /// 
     /// If no value is provided, restores the most recently deleted file
     /// Accepts either file name or trash entry ID
+    /// Make sure there is no file with the same name in the source folder
+    /// If using name, make sure there is no file with the same name in the trash
     #[arg(short = 'u', long = "undo", num_args = 0..)]
     undo: Option<Vec<String>>,
 
@@ -143,8 +155,20 @@ async fn main() -> Result<(),Box<dyn Error>>{
         list(&pool).await?;
         return Ok(());
     }
-    if !args.path.is_empty(){
-        
+    if let Some(names) = args.undo{
+        if name.is_empty(){
+            
+        }else{
+        for i in names{
+            restore(i);
+        }}
+    }
+    if args.path.is_empty(){
+        println!("Use `del --help` to know more");
+    }else{
+        for rubbish in args.path{
+            remove(to_abs_path(&rubbish),&pool,&cfg).await.unwrap();
+        }
     }
     Ok(())
 }
@@ -196,39 +220,64 @@ async fn empty(pool:&SqlitePool,cfg:&Config){
     }
 }
 }
+#[derive(Debug, Tabled)]
+pub struct TrashRow {
+    pub id: i64,
+    pub name: String,
+    pub path: String,
+    #[tabled(rename = "type")]
+    pub archive_tool: ArchiveTool,
+    pub size: String,
+    pub time: String,
+}
 
 async fn list(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
-    let mut pager = Pager::new();
+    let mut pager = minus::Pager::new();
     pager.set_prompt("List trash | press 'q' to exit")?;
 
-    let files = sqlx::query_as!(
-        Database,
-        "SELECT * FROM trash"
-    )
-    .fetch_all(pool)
-    .await?;
+    let files = sqlx::query_as!(Database, "SELECT * FROM trash")
+        .fetch_all(pool)
+        .await?;
+
     if files.is_empty() {
         pager.push_str("It's empty\n")?;
     } else {
-        pager.push_str(format!(
-        "{:<4} {:<8} {:<25} {:<8} {:<20}\n",
-        "id", "name", "original_path", "size", "time"
-    ))?;
-    pager.push_str("------------------------------------------------------------\n")?;
-        for row in files {
-            let size_str = format_size(row.size);
-            pager.push_str(&format!(
-                "{:<4} {:<8} {:<25} {:<8} {:<20}\n",
-                row.id,
-                row.name,
-                row.original_path,
-                size_str,
-                row.time
-            ))?;
-        }
-    }
+        let view_list: Vec<TrashRow> = files
+            .into_iter()
+            .map(|row| TrashRow {
+                id: row.id,
+                name: row.name,
+                path: row.original_path,
+                archive_tool: row.archive_tool,
+                size: format_size(row.size),
+                time: row.time,
+            })
+            .collect();
 
-    page_all(pager)?;
+        let mut table = Table::new(view_list);
+        table.with(Style::blank());
+        table.modify(
+            Rows::new(1..),
+            Width::truncate(30).suffix("...")
+        );
+        table.with(Alignment::left());
+        table.modify(Columns::single(0), Alignment::right());
+        table.modify(Columns::single(5), Alignment::center());
+        let table_str = table.to_string();
+        pager.push_str(table_str)?;
+    }
+    minus::page_all(pager)?;
     Ok(())
 }
 
+
+
+async fn remove(rubbish: PathBuf,pool: &SqlitePool,cfg:&Config) -> Result<(),Box<dyn Error>> {
+    if cfg.disable_list.contains(&rubbish.display().to_string()){
+        eprintln!("Can't remove {} because it's in the disable_list",rubbish.display());
+        std::process::exit(1);
+    }
+    let row = compress(&rubbish , cfg)?;
+    insert(pool,&row).await?;
+    Ok(())
+}

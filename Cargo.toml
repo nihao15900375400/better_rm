@@ -19,5 +19,7 @@ sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio-native-tls", "c
 tar = "0.4.45"
 xz2 = "0.1.7"
 zstd = { version = "0.13.3", features = ["thin"] }
+tabled = { version = "0.15", features = ["derive"] }
+chrono = "0.4"
 which = "6.0"
 walkdir = "2"

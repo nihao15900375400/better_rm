@@ -1,17 +1,16 @@
-use std::path::{Path, PathBuf};
-use std::io::{self, Read, Write};
-use crate::constants;
-use crate::conf::*;
 use crate::archive::*;
-use std::error::Error;
-use sqlx::sqlite::SqlitePool;
+use crate::conf::*;
+use crate::constants;
+use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use sqlx::sqlite::SqlitePool;
+use std::error::Error;
 use std::fs;
-use serde::{Serialize, Deserialize};
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
 
-
-#[derive(Debug,sqlx::FromRow,Serialize, Deserialize,Clone)]
-pub struct Database{
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize, Clone)]
+pub struct Database {
     pub id: i64,
     pub name: String,
     pub original_path: String,
@@ -22,7 +21,7 @@ pub struct Database{
 }
 
 pub async fn create_database(pool: &SqlitePool) -> Result<(), sqlx::Error> {
-    println!("Creating: {}",constants::DATABASE);
+    println!("Creating: {}", constants::DATABASE);
     sqlx::query!(
         r#"DROP TABLE IF EXISTS trash;
         CREATE TABLE IF NOT EXISTS trash (
@@ -34,12 +33,13 @@ pub async fn create_database(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             size INTEGER NOT NULL,
             time TEXT NOT NULL UNIQUE
         )"#
-    ).execute(pool)
+    )
+    .execute(pool)
     .await?;
     println!("done.");
     Ok(())
 }
-pub async fn insert(pool: &SqlitePool,row: &Database) -> Result<(), sqlx::Error>{
+pub async fn insert(pool: &SqlitePool, row: &Database) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
 INSERT INTO trash
@@ -53,20 +53,22 @@ INSERT INTO trash
 )
 VALUES
 (?, ?, ?, ?, ?, ?);
-"#,row.name,
-row.original_path,
-row.present_path,
-row.archive_tool,
-row.size,
-row.time,
-    ).execute(pool)
+"#,
+        row.name,
+        row.original_path,
+        row.present_path,
+        row.archive_tool,
+        row.size,
+        row.time,
+    )
+    .execute(pool)
     .await?;
     Ok(())
 }
-async fn select(
+pub async fn select(
     pool: &SqlitePool,
     column: &str,
-    like: &str
+    like: &str,
 ) -> Result<Vec<Database>, sqlx::Error> {
     let sql = match column {
         "name" => r#"SELECT * FROM trash WHERE name LIKE ?"#,
@@ -84,4 +86,3 @@ async fn select(
 
     Ok(files)
 }
-

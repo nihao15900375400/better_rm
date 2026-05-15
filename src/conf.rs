@@ -1,20 +1,20 @@
-use std::path::{Path, PathBuf};
-use std::io::{self, Read, Write};
+use crate::archive::*;
 use crate::constants::*;
 use crate::utils::*;
-use crate::archive::*;
-use std::error::Error;
-use sqlx::sqlite::SqlitePool;
-use sqlx::Row;
-use std::fs::File;
+use serde::{Deserialize, Serialize};
 use serde_json;
-use serde::{Serialize, Deserialize};
+use sqlx::Row;
+use sqlx::sqlite::SqlitePool;
+use std::error::Error;
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     pub trash: String,
     pub archive_tool: ArchiveTool,
-    pub disable_list: Vec<String>
+    pub disable_list: Vec<String>,
 }
 
 pub fn create_config(path: &PathBuf) -> Result<(), Box<dyn Error>> {
@@ -25,6 +25,6 @@ pub fn create_config(path: &PathBuf) -> Result<(), Box<dyn Error>> {
 }
 pub fn load_config(path: &PathBuf) -> Result<Config, serde_json::Error> {
     let file = File::open(path).unwrap();
-    let cfg:Config = serde_json::from_reader(file)?;
+    let cfg: Config = serde_json::from_reader(file)?;
     Ok(cfg)
 }

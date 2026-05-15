@@ -1,14 +1,13 @@
-use which::which;
-use std::env;
-use std::path::{Path, PathBuf};
-use std::io::{self, Read, Write};
 use crate::constants;
-use std::error::Error;
-use sqlx::sqlite::SqlitePool;
-use sqlx::Row;
-use std::fs;
 use chrono::Local;
-
+use sqlx::Row;
+use sqlx::sqlite::SqlitePool;
+use std::env;
+use std::error::Error;
+use std::fs;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
+use which::which;
 
 pub fn now_time() -> String {
     Local::now().format("%Y-%m-%d_%H:%M:%S").to_string()
@@ -81,6 +80,3 @@ pub fn format_size(size: i64) -> String {
         format!("{:.1}{}", size_val, units[unit_idx])
     }
 }
-
-
-

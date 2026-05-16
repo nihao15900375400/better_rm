@@ -1,14 +1,10 @@
 use crate::archive::*;
 use crate::constants::*;
-use crate::utils::*;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use sqlx::Row;
-use sqlx::sqlite::SqlitePool;
 use std::error::Error;
 use std::fs::File;
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {

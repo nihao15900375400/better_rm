@@ -13,8 +13,10 @@
   <component name="ChangeListManager">
     <list default="true" id="9c24ddc8-102b-43ea-9992-fbe08c22818c" name="更改" comment="修改了一些内容">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/conf.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/conf.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/db.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/db.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/utils.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/utils.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -27,6 +29,9 @@
   </component>
   <component name="MacroExpansionManager">
     <option name="directoryName" value="E9EAXlTD" />
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
   </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 8,
@@ -108,7 +113,7 @@
       <option name="presentableId" value="Default" />
       <updated>1778576609889</updated>
       <workItem from="1778576612764" duration="3140000" />
-      <workItem from="1778838720175" duration="5010000" />
+      <workItem from="1778838720175" duration="6749000" />
     </task>
     <task id="LOCAL-00001" summary="修改了一些内容">
       <option name="closed" value="true" />
@@ -118,7 +123,15 @@
       <option name="project" value="LOCAL" />
       <updated>1778838770784</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="修改了一些内容">
+      <option name="closed" value="true" />
+      <created>1778843988160</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1778843988160</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

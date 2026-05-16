@@ -1,12 +1,7 @@
-use crate::constants;
 use chrono::Local;
-use sqlx::Row;
-use sqlx::sqlite::SqlitePool;
 use std::env;
-use std::error::Error;
-use std::fs;
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
+use std::io::{self, Write};
+use std::path::PathBuf;
 use which::which;
 
 pub fn now_time() -> String {
@@ -57,9 +52,6 @@ pub fn to_abs_path(raw: &str) -> PathBuf {
 }
 pub fn is_nano_installed() -> bool {
     which("nano").is_ok()
-}
-pub fn is_cat_installed() -> bool {
-    which("cat").is_ok()
 }
 
 pub fn format_size(size: i64) -> String {

@@ -8,17 +8,15 @@ use archive::*;
 use clap::Parser;
 use conf::*;
 use db::*;
-use minus::{Pager, page_all};
-use sqlx::Row;
 use sqlx::sqlite::SqlitePool;
 use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use tabled::{
     Table, Tabled,
     settings::{
-        Alignment, Modify, Style, Width,
-        object::{Cell, Columns, Rows},
+        Alignment, Style, Width,
+        object::{Columns, Rows},
     },
 };
 use utils::*;
@@ -37,7 +35,6 @@ struct Args {
     init: bool,
 
     /// Restore file from trash to original location
-    ///
     /// If no value is provided, restores the most recently deleted file
     /// Accepts trash entry ID
     /// Make sure there is no file with the same name in the source folder
@@ -45,13 +42,11 @@ struct Args {
     undo: Option<Vec<String>>,
 
     /// Permanently delete a file from the trash
-    ///
-    /// Accepts either file name or trash entry ID
+    /// Accepts trash entry ID
     #[arg(short = 'd', long = "delete", num_args = 0..)]
     delete: Option<Vec<String>>,
 
     /// Operate recursively on directories
-    ///
     /// Not required for safe trash deletion, but mandatory when using --force
     #[arg(short = 'r', long = "recurse")]
     recurse: bool,
@@ -66,7 +61,7 @@ struct Args {
     #[arg(short = 'l', long = "list")]
     list: bool,
 
-    /// Search and display files in trash matching the given pattern
+    /// Search and display files in trash matching it's name
     /// Use `%` to express any sequence of characters.
     /// Use `_` to express any single character.
     /// Usage: --select "%.txt"
@@ -74,24 +69,19 @@ struct Args {
     select: Option<String>,
 
     /// Filter records by specifying a database field with fuzzy matching.
-    ///
     /// Supported filter fields: name, id, hash, time, original-path, size
-    ///
     /// Wildcard syntax:
     /// - `%`  Matches any sequence of zero or more characters
     /// - `_`  Matches exactly one single arbitrary character
-    ///
     /// Escape rule:
     /// Use backslash `\` to escape literal `%` and `_`,
     /// so they are treated as normal characters instead of wildcards.
-    ///
     /// Example usage:
-    /// --select-from original-path "%path\_to\_the\_file/___.txt"
+    /// --select-from time 202_-12-%\_10:04:__
     #[arg(long = "select-from", num_args = 0..=2)]
     select_from: Option<Vec<String>>,
 
     /// Open configuration file in nano editor
-    ///
     /// Falls back to printing the config file path if nano is not available
     #[arg(short = 'c', long = "config")]
     config: bool,
@@ -104,16 +94,15 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    println!("{:#?}", args);
 
     let cfg_path: PathBuf = to_abs_path(constants::CONFIG);
     let db_path: PathBuf = to_abs_path(constants::DATABASE);
 
     if let Some(p) = cfg_path.parent() {
-        std::fs::create_dir_all(p);
+        std::fs::create_dir_all(p)?;
     }
     if args.init {
-        init(&cfg_path, &db_path).await;
+        init(&cfg_path, &db_path).await?;
         return Ok(());
     }
     let pool = SqlitePool::connect(&format!(
@@ -131,7 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
 
     if let Some(p) = to_abs_path(&cfg.trash).parent() {
-        std::fs::create_dir_all(p);
+        std::fs::create_dir_all(p)?;
     }
 
     if args.config {
@@ -155,26 +144,93 @@ async fn main() -> Result<(), Box<dyn Error>> {
         list(&pool).await?;
         return Ok(());
     }
+    if let Some(name) = args.select {
+        let res = select(&pool,"name",&name).await?;
+        if res.is_empty(){
+            eprintln!("Not found {}",name);
+            std::process::exit(1);
+        }
+        show(res).await?;
+        return Ok(());
+    }
+    if let Some(v) = args.select_from {
+        let res = select(&pool,v.first().unwrap(),v.last().unwrap()).await?;
+        if res.is_empty(){
+            eprintln!("Not found {} from {}",v.last().unwrap(),v.first().unwrap());
+            std::process::exit(1);
+        }
+        show(res).await?;
+        return Ok(());
+    }
+    if let Some(ids) = args.delete {
+        if ids.is_empty() {
+            eprintln!("There should have at least one id followed");
+            std::process::exit(1);
+        }else{
+            for id in ids{
+                let res = select(&pool,"id",&id).await.unwrap();
+                if res.is_empty(){
+                    eprintln!("No id found");
+                    std::process::exit(1);
+                }
+                sqlx::query!("DELETE FROM trash WHERE id = ?;", res.first().unwrap().id)
+                        .execute(&pool)
+                        .await;
+            }
+        }
+        return Ok(());
+    }
     if let Some(names) = args.undo {
         if names.is_empty() {
+            let db = sqlx::query_as!(
+                Database,
+                r#"SELECT * FROM trash
+ORDER BY id DESC
+LIMIT 1;
+"#
+            )
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+            match restore(db.clone()).await {
+                Ok(_) => {
+                    sqlx::query!("DELETE FROM trash WHERE id = ?;", db.first().unwrap().id)
+                        .execute(&pool)
+                        .await;
+                }
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            }
         } else {
             for i in names {
-                restore(&i, &pool, &cfg).await;
+                let id = select(&pool, "id", &i).await.unwrap();
+                match restore(id.clone()).await {
+                    Ok(_) => {
+                        sqlx::query!("DELETE FROM trash WHERE id = ?;", id.first().unwrap().id)
+                            .execute(&pool)
+                            .await;
+                    }
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        std::process::exit(1);
+                    }
+                }
             }
-            return Ok(());
         }
+        return Ok(());
     }
     if args.path.is_empty() {
         println!("Use `del --help` to know more");
     } else {
         for rubbish in args.path {
-            remove(to_abs_path(&rubbish), &pool, &cfg).await.unwrap();
+            remove(to_abs_path(&rubbish), &pool, &cfg).await?;
         }
     }
     Ok(())
 }
-async fn restore(input_id: &str, pool: &SqlitePool, cfg: &Config) {
-    let id = select(pool, "id", input_id).await.unwrap();
+async fn restore(id: Vec<Database>) -> Result<(), Box<dyn Error>> {
     let is_not_id = id.is_empty();
     if is_not_id {
         eprintln!("No id found");
@@ -183,27 +239,16 @@ async fn restore(input_id: &str, pool: &SqlitePool, cfg: &Config) {
         println!("Found as id");
         let a = id.first().unwrap();
         println!("delete from {} at {}", a.original_path, a.time);
-        match input("Sure to restore it?(Y/n) ") {
-            Ok(s) if s.eq_ignore_ascii_case("y") => {
-                unpack(a);
-            }
-            Err(e) => {
-                eprintln!("error: {}", e);
-                std::process::exit(1);
-            }
-            Ok(_) => {
-                return;
-            }
-        }
+        unpack(a)?;
     }
+    Ok(())
 }
 async fn init(cfg_path: &PathBuf, db_path: &PathBuf) -> Result<(), Box<dyn Error>> {
     let pool = SqlitePool::connect(&format!(
         "sqlite:{}",
         to_abs_path(constants::DATABASE).to_string_lossy()
     ))
-    .await
-    .unwrap();
+    .await?;
     if cfg_path.is_file() {
         match input("Config file is exist, cover it?(Y/n) ") {
             Ok(s) if s.eq_ignore_ascii_case("y") => create_config(cfg_path)?,
@@ -242,7 +287,7 @@ async fn empty(pool: &SqlitePool, cfg: &Config) {
         if s.eq_ignore_ascii_case("y") {
             create_database(pool).await.unwrap();
             let trash_path = to_abs_path(&cfg.trash);
-            std::fs::remove_dir_all(&trash_path);
+            std::fs::remove_dir_all(&trash_path).unwrap();
             std::fs::create_dir_all(&trash_path).unwrap();
         }
     }
@@ -257,9 +302,34 @@ pub struct TrashRow {
     pub size: String,
     pub time: String,
 }
+async fn show(files: Vec<Database>)-> Result<(), Box<dyn Error>> {
+    let pager = minus::Pager::new();
+    pager.set_prompt("List trash | press 'q' to exit")?;
+        let view_list: Vec<TrashRow> = files
+            .into_iter()
+            .map(|row| TrashRow {
+                id: row.id,
+                name: row.name,
+                path: row.original_path,
+                archive_tool: row.archive_tool,
+                size: format_size(row.size),
+                time: row.time,
+            })
+            .collect();
 
-async fn list(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
-    let mut pager = minus::Pager::new();
+        let mut table = Table::new(view_list);
+        table.with(Style::blank());
+        table.modify(Rows::new(1..), Width::truncate(30).suffix("..."));
+        table.with(Alignment::left());
+        table.modify(Columns::single(0), Alignment::right());
+        table.modify(Columns::single(5), Alignment::center());
+        let table_str = table.to_string();
+        pager.push_str(table_str)?;
+    minus::page_all(pager)?;
+    Ok(())
+}
+async fn list(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
+    let pager = minus::Pager::new();
     pager.set_prompt("List trash | press 'q' to exit")?;
 
     let files = sqlx::query_as!(Database, "SELECT * FROM trash")

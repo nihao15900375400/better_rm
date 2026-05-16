@@ -1,13 +1,7 @@
 use crate::archive::*;
-use crate::conf::*;
 use crate::constants;
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
 use sqlx::sqlite::SqlitePool;
-use std::error::Error;
-use std::fs;
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize, Clone)]
 pub struct Database {

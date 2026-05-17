@@ -257,11 +257,6 @@ async fn restore(id: Vec<Database>) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 async fn init(cfg_path: &PathBuf, db_path: &PathBuf) -> Result<(), Box<dyn Error>> {
-    let pool = SqlitePool::connect(&format!(
-        "sqlite:{}",
-        to_abs_path(constants::DATABASE).to_string_lossy()
-    ))
-    .await?;
     if cfg_path.is_file() {
         match input("Config file is exist, cover it?(Y/n) ") {
             Ok(s) if s.eq_ignore_ascii_case("y") => create_config(cfg_path)?,
@@ -272,13 +267,26 @@ async fn init(cfg_path: &PathBuf, db_path: &PathBuf) -> Result<(), Box<dyn Error
         create_config(cfg_path)?;
     }
     let cfg = load_config(&to_abs_path(constants::CONFIG))?;
+    let trash_path = to_abs_path(&cfg.trash);
+    std::fs::create_dir_all(&trash_path).unwrap();
     if db_path.is_file() {
         match input("Database file is exist, cover it?(Y/n) ") {
-            Ok(s) if s.eq_ignore_ascii_case("y") => empty(&pool, &cfg).await,
+            Ok(s) if s.eq_ignore_ascii_case("y") => {std::fs::File::create(&db_path).unwrap();
+        let pool = SqlitePool::connect(&format!(
+        "sqlite:{}",
+        to_abs_path(constants::DATABASE).to_string_lossy()
+    )).await?;
+            empty(&pool, &cfg).await;
+            },
             Err(e) => return Err(Box::new(e)),
             Ok(_) => {}
         }
     } else {
+        std::fs::File::create(&db_path).unwrap();
+        let pool = SqlitePool::connect(&format!(
+        "sqlite:{}",
+        to_abs_path(constants::DATABASE).to_string_lossy()
+    )).await?;
         create_database(&pool).await?;
     }
     Ok(())
@@ -300,6 +308,7 @@ async fn empty(pool: &SqlitePool, cfg: &Config) {
         if s.eq_ignore_ascii_case("y") {
             create_database(pool).await.unwrap();
             let trash_path = to_abs_path(&cfg.trash);
+            std::fs::create_dir_all(&trash_path).unwrap();
             std::fs::remove_dir_all(&trash_path).unwrap();
             std::fs::create_dir_all(&trash_path).unwrap();
         }

@@ -37,7 +37,7 @@ pub async fn create_database(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             present_path TEXT NOT NULL,
             archive_tool TEXT NOT NULL,
             size INTEGER NOT NULL,
-            time TEXT NOT NULL UNIQUE
+            time TEXT NOT NULL
         )"#
     )
     .execute(pool)

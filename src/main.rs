@@ -251,6 +251,7 @@ async fn restore(id: Vec<Database>) -> Result<(), Box<dyn Error>> {
         println!("Found as id");
         let a = id.first().unwrap();
         println!("delete from {} at {}", a.original_path, a.time);
+	println!("restoring...");
         unpack(a)?;
     }
     Ok(())

@@ -4,6 +4,19 @@
 `Del` 是一个基于 Rust 开发的安全文件删除与回收站管理工具。该程序旨在提供比系统原生 `rm` 命令更安全的文件删除方案，通过将目标文件/目录压缩归档至指定回收站路径，并记录元数据至 SQLite 数据库，实现误删恢复、条件查询、安全清空与永久删除等功能。
 
 ## 快速开始
+
+```bash
+# 0. 下载并执行rust安装脚本，克隆并编译
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+
+git clone https://gitee.com/ywnh1/rust_del.git
+cd rust_del
+
+cargo build --release
+cp target/release/del /bin
+```
+
 ```bash
 # 1. 初始化配置文件与数据库（首次运行必需）
 del --init

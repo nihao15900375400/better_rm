@@ -30,6 +30,7 @@ use xz2::read::XzDecoder;
 use xz2::write::XzEncoder;
 use zstd::stream::Decoder;
 use zstd::stream::Encoder;
+use chrono::Local;
 
 macro_rules! compress {
     ($src_path:expr, $enc:expr) => {{
@@ -107,8 +108,9 @@ pub fn unpack(db: &Database) -> Result<(), Box<dyn Error>> {
 }
 pub fn compress(src_dir: &PathBuf, cfg: &Config) -> Result<Database, Box<dyn Error>> {
     let time = utils::now_time();
+    let stamp = Local::now().timestamp_millis();
     let mut present_path = to_abs_path(&cfg.trash);
-    present_path.push(format!("{}.bak", time));
+    present_path.push(format!("{}.bak", stamp));
     match cfg.archive_tool {
         ArchiveTool::Xz2 => compress!(src_dir, XzEncoder::new(File::create(&present_path)?, 6)),
         ArchiveTool::Zstd => compress!(src_dir, Encoder::new(File::create(&present_path)?, 6)?),

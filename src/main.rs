@@ -34,7 +34,6 @@ use tabled::{
 use utils::*;
 
 /// A safe file deletion utility with trash support
-///
 /// Provides secure file deletion, trash management, and recovery capabilities
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about)]
@@ -185,9 +184,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     eprintln!("No id found");
                     std::process::exit(1);
                 }
-                sqlx::query!("DELETE FROM trash WHERE id = ?;", res.first().unwrap().id)
+                let a = res.first().unwrap();
+                sqlx::query!("DELETE FROM trash WHERE id = ?;", a.id)
                         .execute(&pool)
                         .await;
+                Command::new("rm")
+                    .arg("-rf")
+                    .arg(&a.present_path)
+                    .status();
             }
         }
         return Ok(());

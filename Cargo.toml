@@ -1,25 +1,18 @@
 [package]
 name = "del"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.102"
 blake3 = "1.8.5"
-bzip2 = "0.6.1"
-clap = { version = "4", features = ["derive", "unicode", "wrap_help"] }
-dirs = "6.0.0"
-flate2 = { version = "1.1.9", features = ["zlib-ng"] }
-md-5 = "0.11.0"
-minus = { version = "5.6.1", features = ["search", "static_output"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = { version = "1.0.149", features = ["preserve_order"] }
-sha2 = "0.11.0"
-tokio = { version = "1", features = ["full"] }
-sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio-native-tls", "chrono", "macros", "migrate"] }
-tar = "0.4.45"
-xz2 = "0.1.7"
-zstd = { version = "0.13.3", features = ["thin"] }
-tabled = { version = "0.15", features = ["derive"] }
-chrono = "0.4"
-which = "6.0"
-walkdir = "2"
+chrono = "0.4.45"
+clap = { version = "4.6.1", features = ["derive", "unicode", "cargo"] }
+console = "0.16.3"
+dialoguer = { version = "0.12.0", features = ["fuzzy-select"] }
+indicatif = { version = "0.18.4", features = [ "improved_unicode", "unicode-segmentation"] }
+sqlx = { version = "0.9.0", features = ["runtime-tokio", "sqlite", "sqlite-bundled", "any", "derive", "macros", "json", "migrate"] }
+tar = "0.4.46"
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros"] }
+zstd = {version = "0.13.3",features = ["zstdmt"]}
+

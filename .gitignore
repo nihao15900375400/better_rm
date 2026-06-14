@@ -1,6 +1,9 @@
 /target
 /config.json
-/app.db
+/*.db
 /.idea
 /.env
+/.sqlx
+/.codewhale
+
 

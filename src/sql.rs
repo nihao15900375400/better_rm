@@ -4,19 +4,19 @@ use sqlx::sqlite::SqlitePool;
 
 #[derive(Debug, sqlx::FromRow)]
 struct TrashRow {
-    id: i64,
     path: String,
     hash: String,
     time: i64,
+    size: String,
 }
 
 pub async fn creat_table(pool: &SqlitePool) -> Result<()> {
     sqlx::query!(
         "CREATE TABLE IF NOT EXISTS trash (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
             path TEXT NOT NULL,
             hash TEXT NOT NULL,
-            time INTEGER NOT NULL
+            time INTEGER NOT NULL,
+            size TEXT NOT NULL
         );"
     )
     .execute(pool)

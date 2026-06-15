@@ -22,8 +22,10 @@ impl<W: Write> HashWriter<W> {
         }
     }
 
+    /// 完成写入，返回 BLAKE3 哈希值（消耗内部的 hasher）。
     fn finalize(&mut self) -> blake3::Hash {
-        self.hasher.finalize()
+        // blake3::Hasher::finalize 消耗 self，这里用 replace 取出所有权
+        std::mem::replace(&mut self.hasher, blake3::Hasher::new()).finalize()
     }
 }
 
@@ -42,44 +44,57 @@ impl<W: Write> Write for HashWriter<W> {
 /// 将文件或目录打包为 tar.zstd，删除源，并返回压缩后文件的 BLAKE3 哈希值。
 ///
 /// 不论 `source` 是文件还是目录，统一打包成 tar.zstd 格式。
-/// 压缩成功后会删除源文件（`remove_file`）或源目录（`remove_dir_all`）。
+/// 压缩成功后**会删除源文件**（`remove_file`）或源目录（`remove_dir_all`）。
 ///
 /// # 参数
 /// - `source`: 源路径（文件或目录）
 /// - `output`: 输出的 tar.zstd 文件路径
-/// - `level`: zstd 压缩级别
+/// - `level`: zstd 压缩级别（1-22，0 使用默认值）
 ///
 /// # 返回
 /// BLAKE3 哈希值的十六进制字符串
-pub fn pack(source: &str, output: &str, level: impl Into<i32>) -> Result<String> {
+pub fn pack(source: &str, output: &str, level: i32) -> Result<String> {
+    // 先确认源路径存在且类型正确
+    let source_path = Path::new(source);
+    if !source_path.try_exists().with_context(|| format!("无法访问源路径: {source}"))? {
+        bail!("源路径不存在: {source}");
+    }
+
+    let is_dir = source_path.is_dir();
+    let is_file = source_path.is_file();
+
+    if !is_dir && !is_file {
+        bail!("源路径不是普通文件或目录: {source}");
+    }
+
+    // 创建输出文件并构建压缩管道
     let file = File::create(Path::new(output))
         .with_context(|| format!("无法创建输出文件: {output}"))?;
     let mut hash_writer = HashWriter::new(file);
-    let enc = Encoder::new(hash_writer, level.into())
+    let enc = Encoder::new(hash_writer, level)
         .with_context(|| "无法创建 zstd 编码器")?;
     let mut builder = Builder::new(enc);
 
-    let source_path = Path::new(source);
-    let is_dir = source_path.is_dir();
+    // 根据类型打包
     if is_dir {
         builder
             .append_dir_all(".", source)
             .with_context(|| format!("无法打包目录: {source}"))?;
-    } else if source_path.is_file() {
+    } else {
         let file_name = source_path
             .file_name()
             .with_context(|| format!("无法获取文件名: {source}"))?;
         builder
             .append_path_with_name(source, file_name)
             .with_context(|| format!("无法打包文件: {source}"))?;
-    } else {
-        bail!("源路径不存在或不是文件/目录: {source}");
     }
 
+    // 完成 tar 打包
     builder
         .finish()
         .with_context(|| "无法完成 tar 打包")?;
 
+    // 完成 zstd 压缩，收回 HashWriter
     let enc = builder
         .into_inner()
         .with_context(|| "无法获取内部编码器")?;
@@ -89,7 +104,8 @@ pub fn pack(source: &str, output: &str, level: impl Into<i32>) -> Result<String>
     hash_writer.flush()?;
 
     // 压缩成功，删除源文件或目录
-    if is_dir {
+    // 重新判断类型以防止打包过程中文件系统状态变化
+    if source_path.is_dir() {
         fs::remove_dir_all(source)
             .with_context(|| format!("无法删除源目录: {source}"))?;
     } else {
@@ -104,10 +120,31 @@ pub fn pack(source: &str, output: &str, level: impl Into<i32>) -> Result<String>
 /// 解压 tar.zstd 归档到目标目录。
 ///
 /// 与 `pack` 配对使用：`pack` 统一输出 tar.zstd，此函数统一解压。
+/// **不会删除**输入的压缩包文件，解压后原 `.tar.zst` 文件保留不变。
+///
+/// # 参数
+/// - `input`: 输入的 tar.zstd 归档文件路径
+/// - `output`: 解压目标目录
 pub fn unpack(input: &str, output: &str) -> Result<()> {
-    let compressed_file = File::open(Path::new(input))?;
-    let decoder = Decoder::new(compressed_file)?;
+    let input_path = Path::new(input);
+    if !input_path
+        .try_exists()
+        .with_context(|| format!("无法访问压缩包: {input}"))?
+    {
+        bail!("压缩包文件不存在: {input}");
+    }
+
+    let compressed_file =
+        File::open(input_path).with_context(|| format!("无法打开压缩包: {input}"))?;
+
+    let decoder = Decoder::new(compressed_file)
+        .with_context(|| format!("无法创建 zstd 解码器，文件可能已损坏: {input}"))?;
+
     let mut tar_archive = Archive::new(decoder);
-    tar_archive.unpack(output)?;
+    tar_archive
+        .unpack(output)
+        .with_context(|| format!("无法解压到目标目录: {output}"))?;
+
+    // 注意：不删除输入的压缩包文件，保留原文件
     Ok(())
 }

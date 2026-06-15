@@ -15,7 +15,7 @@ pub struct Args {
     /// 仅与`--force/-f`连用，递归删除文件夹
     #[arg(short = 'r', long = "recursive")]
     pub recursive: bool,
-    /// 调用系统命令`rm -f`，强制永久删除
+    /// 调用系统命令`rm -f`，强制永久删除，不收禁删名单限制
     #[arg(short, long)]
     pub force: bool,
     ///

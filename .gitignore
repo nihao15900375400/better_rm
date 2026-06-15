@@ -1,9 +1,22 @@
-/target
-/config.json
-/*.db
-/.idea
-/.env
-/.sqlx
-/.codewhale
+# 编译产物 target
+target/
+**/target/
 
+# 配置与环境文件
+.env
+config.json
+
+# 数据库文件
+*.db
+
+# IDE/工具目录
+.idea/
+.codewhale/
+.vscode/
+
+# sqlx 离线缓存
+.sqlx/
+
+# SQL脚本
+*.sql
 

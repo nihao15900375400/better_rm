@@ -1,7 +1,8 @@
 mod args;
-mod config;
 mod pack;
 mod sql;
+// config 是外部 crate（Cargo.toml 中 path = "./config"），通过 use 引入
+use config;
 use anyhow::{Result, ensure};
 use clap::Parser;
 use dialoguer::{Confirm, Input, MultiSelect, theme::ColorfulTheme};

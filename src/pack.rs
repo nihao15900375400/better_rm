@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use dialoguer::{Confirm, theme::ColorfulTheme};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
@@ -148,3 +149,241 @@ pub fn unpack(input: &str, output: &str) -> Result<()> {
     // 注意：不删除输入的压缩包文件，保留原文件
     Ok(())
 }
+
+/// 获取文件名的"核心名"：去掉 `.tar.zst`、`.zst`、`.tar`、`.bak` 等常见后缀。
+fn stem_name(path: &Path) -> Option<String> {
+    let name = path.file_name()?.to_string_lossy().to_string();
+    // 按优先级从长到短匹配后缀
+    for ext in &[".tar.zst", ".tar.zstd", ".bak", ".zst", ".tar"] {
+        if let Some(stripped) = name.strip_suffix(ext) {
+            return Some(stripped.to_string());
+        }
+    }
+    Some(name)
+}
+
+/// 多线程打包多个文件/目录到输出目录。
+///
+/// 使用固定数量（= CPU 逻辑核心数）的工作线程池，每个线程完成当前任务后
+/// 自动从列表中取下一条目，避免线程过多导致上下文切换开销。
+///
+/// 输出文件统一命名为 `{BLAKE3哈希}.bak`，若已有同名文件则自动覆盖。
+/// 压缩失败时自动清理临时文件。
+///
+/// # 参数
+/// - `sources`: 源路径列表（文件或目录）
+/// - `output_dir`: 输出目录
+/// - `level`: zstd 压缩级别（1-22，0 使用默认值）
+///
+/// # 错误
+/// 任意一个线程失败会收集所有错误，打包成一个 `anyhow::Error` 返回。
+pub fn pack_all(sources: &[String], output_dir: &str, level: i32) -> Result<()> {
+    let output_path = Path::new(output_dir);
+    if !output_path.try_exists()? {
+        fs::create_dir_all(output_path)
+            .with_context(|| format!("无法创建输出目录: {output_dir}"))?;
+    }
+
+    let n = sources.len();
+    if n == 0 {
+        return Ok(());
+    }
+
+    // 工作线程数 = min(任务数, CPU 逻辑核心数)
+    let num_workers = std::cmp::min(
+        n,
+        std::thread::available_parallelism()
+            .map(|x| x.get())
+            .unwrap_or(4),
+    );
+
+    let next_idx = std::sync::atomic::AtomicUsize::new(0);
+    let errors = std::sync::Mutex::new(Vec::new());
+
+    // scope 使多个线程可以安全借用外部的局部变量
+    std::thread::scope(|s| {
+        for _ in 0..num_workers {
+            s.spawn(|| loop {
+                let idx = next_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if idx >= n {
+                    break;
+                }
+
+                let source = &sources[idx];
+                let source_path = Path::new(source);
+                let file_name = match source_path.file_name() {
+                    Some(f) => f.to_string_lossy().to_string(),
+                    None => {
+                        errors
+                            .lock()
+                            .unwrap()
+                            .push(anyhow::anyhow!("无法获取文件名: {source}"));
+                        continue;
+                    }
+                };
+
+                let temp_output =
+                    Path::new(output_dir).join(format!(".tmp_{file_name}.tar.zst"));
+                let temp_str = temp_output.to_string_lossy().to_string();
+
+                match pack(source, &temp_str, level) {
+                    Ok(hash) => {
+                        let final_output =
+                            Path::new(output_dir).join(format!("{hash}.bak"));
+                        let r = (|| -> Result<()> {
+                            if final_output.exists() {
+                                fs::remove_file(&final_output)?;
+                            }
+                            fs::rename(&temp_output, &final_output)?;
+                            Ok(())
+                        })();
+                        if let Err(e) = r {
+                            let _ = fs::remove_file(&temp_output);
+                            errors.lock().unwrap().push(
+                                e.context(format!("重命名临时文件到 {hash}.bak 失败")),
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        let _ = fs::remove_file(&temp_output);
+                        errors.lock().unwrap().push(e);
+                    }
+                }
+            });
+        }
+    });
+
+    let errors = errors.into_inner().unwrap();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        let mut msg = String::from("以下任务压缩失败：\n");
+        for e in &errors {
+            msg.push_str(&format!("  - {e}\n"));
+        }
+        bail!("{}", msg.trim())
+    }
+}
+
+/// 多线程解压多个 tar.zstd 归档到输出目录。
+///
+/// 使用固定数量（= CPU 逻辑核心数）的工作线程池，每个线程完成当前任务后
+/// 自动从列表中取下一条目。
+///
+/// 解压前会扫描所有目标路径，若存在冲突则通过 `dialoguer::Confirm` 向用户询问是否覆盖。
+/// **用户确认后**，已存在的路径会被删除再解压。
+///
+/// # 参数
+/// - `inputs`: 输入压缩包路径列表
+/// - `output_dir`: 解压目标目录
+///
+/// # 错误
+/// - 用户拒绝覆盖时返回错误
+/// - 任意线程失败会收集所有错误合并返回
+pub fn unpack_all(inputs: &[String], output_dir: &str) -> Result<()> {
+    let output_path = Path::new(output_dir);
+    if !output_path.try_exists()? {
+        fs::create_dir_all(output_path)
+            .with_context(|| format!("无法创建输出目录: {output_dir}"))?;
+    }
+
+    // ---------- 第一步（主线程）：收集冲突，交互确认 ----------
+    let conflicts: Vec<String> = inputs
+        .iter()
+        .filter_map(|input| {
+            let p = Path::new(input);
+            let stem = stem_name(p)?;
+            let dest = output_path.join(&stem);
+            dest.exists().then(|| dest.to_string_lossy().to_string())
+        })
+        .collect();
+
+    if !conflicts.is_empty() {
+        println!("以下解压目标路径已存在：");
+        for dest in &conflicts {
+            println!("  - {dest}");
+        }
+        let theme = ColorfulTheme::default();
+        let proceed = Confirm::with_theme(&theme)
+            .with_prompt("是否覆盖这些路径？")
+            .default(false)
+            .interact()?;
+        if !proceed {
+            bail!("操作已取消");
+        }
+    }
+
+    // ---------- 第二步：工作池并行解压 ----------
+    let n = inputs.len();
+    if n == 0 {
+        return Ok(());
+    }
+
+    let num_workers = std::cmp::min(
+        n,
+        std::thread::available_parallelism()
+            .map(|x| x.get())
+            .unwrap_or(4),
+    );
+
+    let next_idx = std::sync::atomic::AtomicUsize::new(0);
+    let errors = std::sync::Mutex::new(Vec::new());
+
+    std::thread::scope(|s| {
+        for _ in 0..num_workers {
+            s.spawn(|| loop {
+                let idx = next_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if idx >= n {
+                    break;
+                }
+
+                let input = &inputs[idx];
+                let p = Path::new(input);
+                let stem = match stem_name(p) {
+                    Some(s) => s,
+                    None => {
+                        errors.lock().unwrap().push(anyhow::anyhow!(
+                            "无法解压 {input}：无法提取文件名"
+                        ));
+                        continue;
+                    }
+                };
+
+                let dest = output_path.join(&stem);
+                let dest_str = dest.to_string_lossy().to_string();
+
+                // 因用户已确认覆盖，删除已存在的路径
+                if dest.exists() {
+                    let rm = if dest.is_dir() {
+                        fs::remove_dir_all(&dest)
+                    } else {
+                        fs::remove_file(&dest)
+                    };
+                    if let Err(e) = rm {
+                        errors.lock().unwrap().push(
+                            anyhow::anyhow!("无法移除已存在的路径 {dest_str}: {e}"),
+                        );
+                        continue;
+                    }
+                }
+
+                if let Err(e) = unpack(input, &dest_str) {
+                    errors.lock().unwrap().push(e);
+                }
+            });
+        }
+    });
+
+    let errors = errors.into_inner().unwrap();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        let mut msg = String::from("以下任务解压失败：\n");
+        for e in &errors {
+            msg.push_str(&format!("  - {e}\n"));
+        }
+        bail!("{}", msg.trim())
+    }
+}
+
+

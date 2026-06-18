@@ -9,14 +9,12 @@ chrono = "0.4.45"
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros"] }
 multi_select = {path = "./multi_select"}
 config = {path="./config"}
+console = "0.16.3"
+dialoguer = { version = "0.12.0", features = ["fuzzy-select"] }
 
 # args.rs
 clap = { version = "4.6.1", features = ["derive", "unicode", "cargo"] }
 
-# display.rs
-console = "0.16.3"
-dialoguer = { version = "0.12.0", features = ["fuzzy-select"] }
-indicatif = { version = "0.18.4", features = [ "improved_unicode", "unicode-segmentation"] }
 
 # sql.rs
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "sqlite", "sqlite-bundled", "any", "derive", "macros", "json", "migrate"] }

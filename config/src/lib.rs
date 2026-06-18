@@ -299,7 +299,7 @@ enum DisableListAction {
 }
 
 /// 展开路径开头的 `~` 为用户主目录
-fn expand_tilde(path: &str) -> String {
+pub fn expand_tilde(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Ok(home) = std::env::var("HOME") {
             return format!("{}/{}", home, rest);

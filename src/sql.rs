@@ -2,6 +2,7 @@ use anyhow::Result;
 use chrono::{Local, TimeZone, Utc};
 use multi_select::TableRow;
 use sqlx::sqlite::SqlitePool;
+
 #[derive(Debug, sqlx::FromRow, Clone, PartialEq)]
 pub struct TrashRow {
     pub id: i64,
@@ -64,17 +65,6 @@ pub async fn insert(pool: &SqlitePool, path: &str, hash: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn select(pool: &SqlitePool, m: &str) -> Result<Vec<TrashRow>> {
-    let rows: Vec<TrashRow> = sqlx::query_as!(
-        TrashRow,
-        "SELECT * FROM trash WHERE path LIKE ? ESCAPE '\\';",
-        m
-    )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows)
-}
-
 pub async fn select_all(pool: &SqlitePool) -> Result<Vec<TrashRow>> {
     let rows: Vec<TrashRow> = sqlx::query_as!(TrashRow, "SELECT * FROM trash;")
         .fetch_all(pool)
@@ -84,11 +74,9 @@ pub async fn select_all(pool: &SqlitePool) -> Result<Vec<TrashRow>> {
 
 pub async fn remove(pool: &SqlitePool, to_del: &[TrashRow]) -> Result<()> {
     for i in to_del {
-        sqlx::query!(
-            "DELETE FROM trash WHERE id = ?;",
-            i.id,
-        ).execute(pool)
-        .await?;
+        sqlx::query!("DELETE FROM trash WHERE id = ?;", i.id,)
+            .execute(pool)
+            .await?;
     }
     Ok(())
 }

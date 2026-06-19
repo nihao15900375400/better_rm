@@ -6,14 +6,11 @@ target/
 .env
 config.json
 
-# 数据库文件
-*.db
-
 # IDE/工具目录
 .idea/
 .codewhale/
 .vscode/
-
+.deepseek/
 # sqlx 离线缓存
 .sqlx/
 

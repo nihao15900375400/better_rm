@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use dialoguer::{Confirm, theme::ColorfulTheme};
 use std::fs;
 use std::fs::File;
@@ -57,7 +57,10 @@ impl<W: Write> Write for HashWriter<W> {
 pub fn pack(source: &str, output: &str, level: i32) -> Result<String> {
     // 先确认源路径存在且类型正确
     let source_path = Path::new(source);
-    if !source_path.try_exists().with_context(|| format!("无法访问源路径: {source}"))? {
+    if !source_path
+        .try_exists()
+        .with_context(|| format!("无法访问源路径: {source}"))?
+    {
         bail!("源路径不存在: {source}");
     }
 
@@ -69,11 +72,10 @@ pub fn pack(source: &str, output: &str, level: i32) -> Result<String> {
     }
 
     // 创建输出文件并构建压缩管道
-    let file = File::create(Path::new(output))
-        .with_context(|| format!("无法创建输出文件: {output}"))?;
+    let file =
+        File::create(Path::new(output)).with_context(|| format!("无法创建输出文件: {output}"))?;
     let mut hash_writer = HashWriter::new(file);
-    let enc = Encoder::new(hash_writer, level)
-        .with_context(|| "无法创建 zstd 编码器")?;
+    let enc = Encoder::new(hash_writer, level).with_context(|| "无法创建 zstd 编码器")?;
     let mut builder = Builder::new(enc);
 
     // 根据类型打包
@@ -91,27 +93,19 @@ pub fn pack(source: &str, output: &str, level: i32) -> Result<String> {
     }
 
     // 完成 tar 打包
-    builder
-        .finish()
-        .with_context(|| "无法完成 tar 打包")?;
+    builder.finish().with_context(|| "无法完成 tar 打包")?;
 
     // 完成 zstd 压缩，收回 HashWriter
-    let enc = builder
-        .into_inner()
-        .with_context(|| "无法获取内部编码器")?;
-    hash_writer = enc
-        .finish()
-        .with_context(|| "无法完成 zstd 压缩")?;
+    let enc = builder.into_inner().with_context(|| "无法获取内部编码器")?;
+    hash_writer = enc.finish().with_context(|| "无法完成 zstd 压缩")?;
     hash_writer.flush()?;
 
     // 压缩成功，删除源文件或目录
     // 重新判断类型以防止打包过程中文件系统状态变化
     if source_path.is_dir() {
-        fs::remove_dir_all(source)
-            .with_context(|| format!("无法删除源目录: {source}"))?;
+        fs::remove_dir_all(source).with_context(|| format!("无法删除源目录: {source}"))?;
     } else {
-        fs::remove_file(source)
-            .with_context(|| format!("无法删除源文件: {source}"))?;
+        fs::remove_file(source).with_context(|| format!("无法删除源文件: {source}"))?;
     }
 
     let hash = hash_writer.finalize();
@@ -177,7 +171,7 @@ fn stem_name(path: &Path) -> Option<String> {
 ///
 /// # 错误
 /// 任意一个线程失败会收集所有错误，打包成一个 `anyhow::Error` 返回。
-pub fn pack_all(sources: &[String], output_dir: &str, level: i32) -> Result<()> {
+pub fn pack_all(sources: &[String], output_dir: &str, level: i32) -> Result<Vec<String>> {
     let output_path = Path::new(output_dir);
     if !output_path.try_exists()? {
         fs::create_dir_all(output_path)
@@ -186,7 +180,7 @@ pub fn pack_all(sources: &[String], output_dir: &str, level: i32) -> Result<()> 
 
     let n = sources.len();
     if n == 0 {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     // 工作线程数 = min(任务数, CPU 逻辑核心数)
@@ -200,53 +194,61 @@ pub fn pack_all(sources: &[String], output_dir: &str, level: i32) -> Result<()> 
     let next_idx = std::sync::atomic::AtomicUsize::new(0);
     let errors = std::sync::Mutex::new(Vec::new());
 
+    let results = std::sync::Mutex::new(Vec::<(usize, String)>::new());
+
     // scope 使多个线程可以安全借用外部的局部变量
     std::thread::scope(|s| {
         for _ in 0..num_workers {
-            s.spawn(|| loop {
-                let idx = next_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                if idx >= n {
-                    break;
-                }
-
-                let source = &sources[idx];
-                let source_path = Path::new(source);
-                let file_name = match source_path.file_name() {
-                    Some(f) => f.to_string_lossy().to_string(),
-                    None => {
-                        errors
-                            .lock()
-                            .unwrap()
-                            .push(anyhow::anyhow!("无法获取文件名: {source}"));
-                        continue;
+            s.spawn(|| {
+                loop {
+                    let idx = next_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if idx >= n {
+                        break;
                     }
-                };
 
-                let temp_output =
-                    Path::new(output_dir).join(format!(".tmp_{file_name}.tar.zst"));
-                let temp_str = temp_output.to_string_lossy().to_string();
-
-                match pack(source, &temp_str, level) {
-                    Ok(hash) => {
-                        let final_output =
-                            Path::new(output_dir).join(format!("{hash}.bak"));
-                        let r = (|| -> Result<()> {
-                            if final_output.exists() {
-                                fs::remove_file(&final_output)?;
-                            }
-                            fs::rename(&temp_output, &final_output)?;
-                            Ok(())
-                        })();
-                        if let Err(e) = r {
-                            let _ = fs::remove_file(&temp_output);
-                            errors.lock().unwrap().push(
-                                e.context(format!("重命名临时文件到 {hash}.bak 失败")),
-                            );
+                    let source = &sources[idx];
+                    let source_path = Path::new(source);
+                    let file_name = match source_path.file_name() {
+                        Some(f) => f.to_string_lossy().to_string(),
+                        None => {
+                            errors
+                                .lock()
+                                .unwrap()
+                                .push(anyhow::anyhow!("无法获取文件名: {source}"));
+                            continue;
                         }
-                    }
-                    Err(e) => {
-                        let _ = fs::remove_file(&temp_output);
-                        errors.lock().unwrap().push(e);
+                    };
+
+                    let temp_output =
+                        Path::new(output_dir).join(format!(".tmp_{file_name}.tar.zst"));
+                    let temp_str = temp_output.to_string_lossy().to_string();
+
+                    match pack(source, &temp_str, level) {
+                        Ok(hash) => {
+                            let final_output = Path::new(output_dir).join(format!("{hash}.bak"));
+                            let r = (|| -> Result<()> {
+                                if final_output.exists() {
+                                    fs::remove_file(&final_output)?;
+                                }
+                                fs::rename(&temp_output, &final_output)?;
+                                Ok(())
+                            })();
+                            if let Err(e) = r {
+                                let _ = fs::remove_file(&temp_output);
+                                errors
+                                    .lock()
+                                    .unwrap()
+                                    .push(
+                                        e.context(format!("重命名临时文件到 {hash}.bak 失败")),
+                                    );
+                            } else {
+                                results.lock().unwrap().push((idx, hash));
+                            }
+                        }
+                        Err(e) => {
+                            let _ = fs::remove_file(&temp_output);
+                            errors.lock().unwrap().push(e);
+                        }
                     }
                 }
             });
@@ -255,7 +257,10 @@ pub fn pack_all(sources: &[String], output_dir: &str, level: i32) -> Result<()> 
 
     let errors = errors.into_inner().unwrap();
     if errors.is_empty() {
-        Ok(())
+        let mut raw = results.into_inner().unwrap();
+        raw.sort_by_key(|(idx, _)| *idx);
+        let hashes: Vec<String> = raw.into_iter().map(|(_, h)| h).collect();
+        Ok(hashes)
     } else {
         let mut msg = String::from("以下任务压缩失败：\n");
         for e in &errors {
@@ -331,44 +336,48 @@ pub fn unpack_all(inputs: &[String], output_dir: &str) -> Result<()> {
 
     std::thread::scope(|s| {
         for _ in 0..num_workers {
-            s.spawn(|| loop {
-                let idx = next_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                if idx >= n {
-                    break;
-                }
-
-                let input = &inputs[idx];
-                let p = Path::new(input);
-                let stem = match stem_name(p) {
-                    Some(s) => s,
-                    None => {
-                        errors.lock().unwrap().push(anyhow::anyhow!(
-                            "无法解压 {input}：无法提取文件名"
-                        ));
-                        continue;
+            s.spawn(|| {
+                loop {
+                    let idx = next_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if idx >= n {
+                        break;
                     }
-                };
 
-                let dest = output_path.join(&stem);
-                let dest_str = dest.to_string_lossy().to_string();
-
-                // 因用户已确认覆盖，删除已存在的路径
-                if dest.exists() {
-                    let rm = if dest.is_dir() {
-                        fs::remove_dir_all(&dest)
-                    } else {
-                        fs::remove_file(&dest)
+                    let input = &inputs[idx];
+                    let p = Path::new(input);
+                    let stem = match stem_name(p) {
+                        Some(s) => s,
+                        None => {
+                            errors
+                                .lock()
+                                .unwrap()
+                                .push(anyhow::anyhow!("无法解压 {input}：无法提取文件名"));
+                            continue;
+                        }
                     };
-                    if let Err(e) = rm {
-                        errors.lock().unwrap().push(
-                            anyhow::anyhow!("无法移除已存在的路径 {dest_str}: {e}"),
-                        );
-                        continue;
-                    }
-                }
 
-                if let Err(e) = unpack(input, &dest_str) {
-                    errors.lock().unwrap().push(e);
+                    let dest = output_path.join(&stem);
+                    let dest_str = dest.to_string_lossy().to_string();
+
+                    // 因用户已确认覆盖，删除已存在的路径
+                    if dest.exists() {
+                        let rm = if dest.is_dir() {
+                            fs::remove_dir_all(&dest)
+                        } else {
+                            fs::remove_file(&dest)
+                        };
+                        if let Err(e) = rm {
+                            errors
+                                .lock()
+                                .unwrap()
+                                .push(anyhow::anyhow!("无法移除已存在的路径 {dest_str}: {e}"));
+                            continue;
+                        }
+                    }
+
+                    if let Err(e) = unpack(input, &dest_str) {
+                        errors.lock().unwrap().push(e);
+                    }
                 }
             });
         }
@@ -385,5 +394,3 @@ pub fn unpack_all(inputs: &[String], output_dir: &str) -> Result<()> {
         bail!("{}", msg.trim())
     }
 }
-
-

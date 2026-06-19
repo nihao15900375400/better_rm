@@ -2,7 +2,7 @@ mod args;
 mod pack;
 mod sql;
 
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use chrono::{Utc,Duration};
 use clap::Parser;
 use config::{Config, expand_tilde};
@@ -18,12 +18,12 @@ use std::path::{Path, PathBuf};
 
 
 const CONFIG_PATH: &str = "~/.config/del/config.toml";
-const DB_PATH: &str = "~/.config/del/trash.test.db";
+const DB_PATH: &str = "~/.config/del/trash.db";
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = args::Args::parse();
-    println!("{:#?}", args);
+    // println!("{:#?}", args);
 
     let db_path = expand_tilde(DB_PATH);
     let theme = ColorfulTheme::default();
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
                         .interact()?
                     {
                         let code = std::process::Command::new("rm")
-                            .arg(&expand_tilde(DB_PATH))
+                            .arg(expand_tilde(DB_PATH))
                             .status()?;
                         ensure!(
                             code.success(),
@@ -135,7 +135,7 @@ async fn main() -> Result<()> {
             .interact()?
         {
             let code = std::process::Command::new("rm")
-                .arg(&expand_tilde(DB_PATH))
+                .arg(expand_tilde(DB_PATH))
                 .status()?;
             ensure!(
                 code.success(),
@@ -152,9 +152,10 @@ async fn main() -> Result<()> {
                 Path::new(x).canonicalize().unwrap().display().to_string()
             })
             .collect();
-            let hashes = pack_all(&to_del,&cfg.trash,cfg.compression_level)?;
+            let results = pack_all(&to_del,&cfg.trash,cfg.compression_level)?;
             for i in 0..to_del.len(){
-                insert(&pool,&to_del[i],&hashes[i]).await?;
+                let (hash, size) = &results[i];
+                insert(&pool, &to_del[i], hash, size).await?;
             }
         }
     }
@@ -170,9 +171,15 @@ fn restore(to_restore: &[TrashRow], cfg: &Config) -> Result<()> {
     match dir {
         0 => {
             for i in to_restore {
-                let mut trash_dir: PathBuf = PathBuf::from(cfg.trash.clone());
-                trash_dir.push(format!("{}.bak", i.hash));
-                unpack(PathBuf::from(cfg.trash.clone()).to_str().unwrap(), &i.path)?;
+                let mut archive_path: PathBuf = PathBuf::from(cfg.trash.clone());
+                archive_path.push(format!("{}.bak", i.hash));
+
+                let original_path = Path::new(&i.path);
+                let parent = original_path
+                    .parent()
+                    .with_context(|| format!("无法获取 {} 的父目录", i.path))?;
+                fs::create_dir_all(parent)?;
+                unpack(archive_path.to_str().unwrap(), parent.to_str().unwrap())?;
             }
         }
         1 => {

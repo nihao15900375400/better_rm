@@ -52,13 +52,14 @@ pub async fn creat_table(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-pub async fn insert(pool: &SqlitePool, path: &str, hash: &str) -> Result<()> {
+pub async fn insert(pool: &SqlitePool, path: &str, hash: &str, size: &str) -> Result<()> {
     let time = Utc::now().timestamp_millis();
     sqlx::query!(
-        "INSERT INTO trash (path,hash,time) VALUES (?,?,?);",
+        "INSERT INTO trash (path,hash,time,size) VALUES (?,?,?,?);",
         path,
         hash,
-        time
+        time,
+        size
     )
     .execute(pool)
     .await?;

@@ -80,8 +80,11 @@ pub fn pack(source: &str, output: &str, level: i32) -> Result<String> {
 
     // 根据类型打包
     if is_dir {
+        let dir_name = source_path
+            .file_name()
+            .with_context(|| format!("无法获取目录名: {source}"))?;
         builder
-            .append_dir_all(".", source)
+            .append_dir_all(dir_name, source)
             .with_context(|| format!("无法打包目录: {source}"))?;
     } else {
         let file_name = source_path
@@ -129,6 +132,15 @@ pub fn unpack(input: &str, output: &str) -> Result<()> {
         bail!("压缩包文件不存在: {input}");
     }
 
+    // 安全检查：output 不能是已存在的普通文件（必须是目录或不存在）
+    let output_path = Path::new(output);
+    if output_path.try_exists()? && !output_path.is_dir() {
+        bail!(
+            "解压目标路径已存在且不是目录: {output}\n\
+             提示：解压目标必须是一个文件夹（目录），不能是文件。"
+        );
+    }
+
     let compressed_file =
         File::open(input_path).with_context(|| format!("无法打开压缩包: {input}"))?;
 
@@ -142,6 +154,22 @@ pub fn unpack(input: &str, output: &str) -> Result<()> {
 
     // 注意：不删除输入的压缩包文件，保留原文件
     Ok(())
+}
+
+/// 将字节数转换为人类可读的格式（B / KB / MB / GB / TB）。
+fn human_readable_size(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    let mut size = bytes as f64;
+    let mut unit_idx = 0;
+    while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_idx += 1;
+    }
+    if unit_idx == 0 {
+        format!("{} {}", bytes, UNITS[unit_idx])
+    } else {
+        format!("{:.2} {}", size, UNITS[unit_idx])
+    }
 }
 
 /// 获取文件名的"核心名"：去掉 `.tar.zst`、`.zst`、`.tar`、`.bak` 等常见后缀。
@@ -171,7 +199,8 @@ fn stem_name(path: &Path) -> Option<String> {
 ///
 /// # 错误
 /// 任意一个线程失败会收集所有错误，打包成一个 `anyhow::Error` 返回。
-pub fn pack_all(sources: &[String], output_dir: &str, level: i32) -> Result<Vec<String>> {
+/// 多线程打包多个文件/目录到输出目录，返回每个文件的 (BLAKE3 哈希, 人类可读大小) 元组。
+pub fn pack_all(sources: &[String], output_dir: &str, level: i32) -> Result<Vec<(String, String)>> {
     let output_path = Path::new(output_dir);
     if !output_path.try_exists()? {
         fs::create_dir_all(output_path)
@@ -194,7 +223,7 @@ pub fn pack_all(sources: &[String], output_dir: &str, level: i32) -> Result<Vec<
     let next_idx = std::sync::atomic::AtomicUsize::new(0);
     let errors = std::sync::Mutex::new(Vec::new());
 
-    let results = std::sync::Mutex::new(Vec::<(usize, String)>::new());
+    let results = std::sync::Mutex::new(Vec::<(usize, String, String)>::new());
 
     // scope 使多个线程可以安全借用外部的局部变量
     std::thread::scope(|s| {
@@ -242,7 +271,10 @@ pub fn pack_all(sources: &[String], output_dir: &str, level: i32) -> Result<Vec<
                                         e.context(format!("重命名临时文件到 {hash}.bak 失败")),
                                     );
                             } else {
-                                results.lock().unwrap().push((idx, hash));
+                                let size = fs::metadata(&final_output)
+                                    .map(|m| human_readable_size(m.len()))
+                                    .unwrap_or_else(|_| "未知".to_string());
+                                results.lock().unwrap().push((idx, hash, size));
                             }
                         }
                         Err(e) => {
@@ -258,9 +290,9 @@ pub fn pack_all(sources: &[String], output_dir: &str, level: i32) -> Result<Vec<
     let errors = errors.into_inner().unwrap();
     if errors.is_empty() {
         let mut raw = results.into_inner().unwrap();
-        raw.sort_by_key(|(idx, _)| *idx);
-        let hashes: Vec<String> = raw.into_iter().map(|(_, h)| h).collect();
-        Ok(hashes)
+        raw.sort_by_key(|(idx, _, _)| *idx);
+        let pairs: Vec<(String, String)> = raw.into_iter().map(|(_, h, s)| (h, s)).collect();
+        Ok(pairs)
     } else {
         let mut msg = String::from("以下任务压缩失败：\n");
         for e in &errors {

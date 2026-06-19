@@ -1,9 +1,19 @@
+// Copyright (c) 2026 ywnh1
+// del is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//          http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+// EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+// MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+
 mod args;
 mod pack;
 mod sql;
 
 use anyhow::{Context, Result, ensure};
-use chrono::{Utc,Duration};
+use chrono::{Duration, Utc};
 use clap::Parser;
 use config::{Config, expand_tilde};
 use console::{Color, style};
@@ -15,7 +25,6 @@ use sqlx::SqlitePool;
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
-
 
 const CONFIG_PATH: &str = "~/.config/del/config.toml";
 const DB_PATH: &str = "~/.config/del/trash.db";
@@ -144,16 +153,16 @@ async fn main() -> Result<()> {
             );
         }
     } else if args.autoclean {
-        autoclean(&pool,&cfg).await?;
+        autoclean(&pool, &cfg).await?;
     } else {
         if !args.path.is_empty() {
-            let to_del:Vec<String> = args.path.iter()
-                .map(|x|{
-                Path::new(x).canonicalize().unwrap().display().to_string()
-            })
-            .collect();
-            let results = pack_all(&to_del,&cfg.trash,cfg.compression_level)?;
-            for i in 0..to_del.len(){
+            let to_del: Vec<String> = args
+                .path
+                .iter()
+                .map(|x| Path::new(x).canonicalize().unwrap().display().to_string())
+                .collect();
+            let results = pack_all(&to_del, &cfg.trash, cfg.compression_level)?;
+            for i in 0..to_del.len() {
                 let (hash, size) = &results[i];
                 insert(&pool, &to_del[i], hash, size).await?;
             }
@@ -218,7 +227,7 @@ fn scan_all_files(root: &Path) -> std::io::Result<Vec<PathBuf>> {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.extension().and_then(|s| s.to_str()).unwrap_or("none") == "bak"{
+            } else if path.extension().and_then(|s| s.to_str()).unwrap_or("none") == "bak" {
                 files.push(path);
             }
         }
@@ -233,25 +242,23 @@ async fn autoclean(pool: &SqlitePool, cfg: &Config) -> Result<()> {
     let ago = Utc::now() - Duration::days(cfg.save_days.into());
     let mut at_date = Vec::new();
     for i in &all {
-        if i.time <= ago.timestamp_millis().into(){
+        if i.time <= ago.timestamp_millis().into() {
             at_date.push(i.clone());
         }
     }
-    remove(&pool,&at_date).await?;
+    remove(&pool, &at_date).await?;
 
-    let all_hash:Vec<String> = all.iter().map(|i| i.hash.clone()).collect();
+    let all_hash: Vec<String> = all.iter().map(|i| i.hash.clone()).collect();
     all_files.retain(|x| -> bool {
-        !all_hash.contains(
-            &String::from(x
-            .as_path()
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("0")
-        )
-        )
-    } );
+        !all_hash.contains(&String::from(
+            x.as_path()
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("0"),
+        ))
+    });
 
-    all_files.iter().for_each(|x|{
+    all_files.iter().for_each(|x| {
         fs::remove_file(x).unwrap();
     });
 

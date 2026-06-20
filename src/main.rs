@@ -22,12 +22,112 @@ use multi_select::multi_select;
 use pack::*;
 use sql::*;
 use sqlx::SqlitePool;
+use glob::Pattern;
 use std::fs;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 const CONFIG_PATH: &str = "~/.config/del/config.toml";
 const DB_PATH: &str = "~/.config/del/trash.db";
+
+/// 检查传入路径是否命中禁删名单。命中则 panic，中止全部操作。
+///
+/// 比较规则：
+/// 1. 直接字符串比较
+/// 2. 展开 `~` 后比较
+/// 3. 解析成绝对路径并清理 `.`、`..` 后比较
+/// 4. 若禁删名单条目包含通配符 `*`，使用 glob 模式匹配
+fn check_disable_list(paths: &[String], disable_list: &[String]) {
+    for path in paths {
+        let expanded_path = expand_tilde(path);
+        let abs_path = normalize_abs_path(&expanded_path);
+
+        for disabled in disable_list {
+            // 1. 直接字符串比较
+            if path == disabled {
+                panic!(
+                    "禁止删除路径 \"{}\"（匹配禁删名单条目 \"{}\"），操作已中止，所有文件均未删除。",
+                    path, disabled
+                );
+            }
+
+            // 2. 展开 ~ 后比较
+            let expanded_disabled = expand_tilde(disabled);
+            if expanded_path == expanded_disabled {
+                panic!(
+                    "禁止删除路径 \"{}\"（展开后匹配禁删名单条目 \"{}\"），操作已中止，所有文件均未删除。",
+                    path, disabled
+                );
+            }
+
+            // 3. 转绝对路径 + 清理 . 和 .. 后比较
+            let abs_disabled = normalize_abs_path(&expanded_disabled);
+            if abs_path == abs_disabled {
+                panic!(
+                    "禁止删除路径 \"{}\"（绝对路径匹配禁删名单条目 \"{}\"），操作已中止，所有文件均未删除。",
+                    path, disabled
+                );
+            }
+
+            // 4. glob 模式匹配（仅当禁删条目包含 * 通配符时）
+            if disabled.contains('*') {
+                if let Ok(pattern) = Pattern::new(&abs_disabled) {
+                    if pattern.matches(&abs_path) {
+                        panic!(
+                            "禁止删除路径 \"{}\"（通配符匹配禁删名单条目 \"{}\"），操作已中止，所有文件均未删除。",
+                            path, disabled
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 将路径展开为绝对路径并规范化（消除 `.` 和 `..` 组件）。
+///
+/// 不要求路径实际存在（与 `canonicalize` 不同）。
+fn normalize_abs_path(path: &str) -> String {
+    let p = Path::new(path);
+    let abs = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("/"))
+            .join(p)
+    };
+
+    // 清理 . 和 .. 组件
+    let mut components: Vec<Component> = Vec::new();
+    for comp in abs.components() {
+        match comp {
+            Component::CurDir => {} // 跳过 .
+            Component::ParentDir => {
+                // 弹出前一个普通组件（根目录不可弹）
+                match components.last() {
+                    Some(&Component::Normal(_)) | Some(&Component::ParentDir) => {
+                        components.pop();
+                    }
+                    Some(&Component::RootDir) => {} // /.. = /
+                    None => {
+                        // 无法回退，保留 ..
+                        components.push(Component::ParentDir);
+                    }
+                    _ => {} // 保留 ..
+                }
+            }
+            c => components.push(c),
+        }
+    }
+
+    let normalized: PathBuf = components.iter().collect();
+    // 确保空路径变为当前目录
+    if normalized.as_os_str().is_empty() {
+        String::from(".")
+    } else {
+        normalized.to_string_lossy().to_string()
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -112,6 +212,9 @@ async fn main() -> Result<()> {
         return Ok(());
     }
     if args.force {
+        if !args.path.is_empty() {
+            check_disable_list(&args.path, &cfg.disable_list);
+        }
         let status: std::process::ExitStatus = if args.recursive {
             std::process::Command::new("rm")
                 .arg("-rf")
@@ -156,6 +259,7 @@ async fn main() -> Result<()> {
         autoclean(&pool, &cfg).await?;
     } else {
         if !args.path.is_empty() {
+            check_disable_list(&args.path, &cfg.disable_list);
             let to_del: Vec<String> = args
                 .path
                 .iter()

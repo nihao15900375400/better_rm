@@ -138,7 +138,7 @@ impl Config {
             }
         }
 
-        let _: Result<String, _> = input("按回车继续").interact();
+        let _: Result<String, _> = input("按回车继续").required(false).interact();
     }
 
     fn set_compression_level(&self) -> Result<Self> {
@@ -255,12 +255,12 @@ impl Config {
                         new.disable_list.push(path.clone());
                         log::step(&format!("已添加: {}", path)).ok();
                     }
-                    let _: String = input("按回车继续").interact()?;
+                    let _: String = input("按回车继续").required(false).interact()?;
                 }
                 DisableListAction::Remove => {
                     if new.disable_list.is_empty() {
                         log::remark("列表为空，没有可删除的项").ok();
-                        let _: String = input("按回车继续").interact()?;
+                        let _: String = input("按回车继续").required(false).interact()?;
                         continue;
                     }
 
@@ -280,7 +280,7 @@ impl Config {
                         let removed = new.disable_list.remove(choice);
                         log::step(&format!("已删除: {}", removed)).ok();
                     }
-                    let _: String = input("按回车继续").interact()?;
+                    let _: String = input("按回车继续").required(false).interact()?;
                 }
                 DisableListAction::Back => break,
             }

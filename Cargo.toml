@@ -1,29 +1,23 @@
 [package]
 name = "del"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 
 [dependencies]
 anyhow = "1.0.102"
-chrono = "0.4.45"
-tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros"] }
-multi_select = {path = "./multi_select"}
-config = {path="./config"}
-console = "0.16.3"
-dialoguer = { version = "0.12.0", features = ["fuzzy-select"] }
-
-# args.rs
-clap = { version = "4.6.1", features = ["derive", "unicode", "cargo"] }
-
-# check disable_list with glob
-glob = "0.3"
-
-
-# sql.rs
-sqlx = { version = "0.9.0", features = ["runtime-tokio", "sqlite", "sqlite-bundled", "any", "derive", "macros", "json", "migrate"] }
-
-# pach.rs
+clap = { version = "4.6.1", features = ["derive", "unicode", "cargo", "color"] }
 blake3 = "1.8.5"
 tar = "0.4.46"
 zstd = {version = "0.13.3",features = ["zstdmt"]}
-
+rusqlite = { version = "0.40.1", features = ["bundled", "load_extension"] }
+figment = { version = "0.10.19", features = ["toml", "env"] }
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.8"
+glob = "0.3.3"
+dirs = "6.0.0"
+timeago = "0.6.0"
+tempfile = "3.27.0"
+rayon = "1.12.0"
+ratatui = "0.30"
+crossterm = "0.28"
+cliclack = "0.5.4"

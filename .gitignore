@@ -2,6 +2,12 @@
 target/
 **/target/
 
+# 发布产物
+release/*.deb
+release/*.tar.xz
+release/del_arm64
+release/del_x86_64
+
 # 配置与环境文件
 .env
 config.json

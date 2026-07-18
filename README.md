@@ -55,7 +55,7 @@ sudo dpkg -i del_0.3.2_arm64.deb
 ### Install from crates.io
 
 ```bash
-cargo install del
+cargo install better-rm
 ```
 
 ### Build from source

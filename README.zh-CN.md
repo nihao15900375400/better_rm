@@ -55,7 +55,7 @@ sudo dpkg -i del_0.3.2_arm64.deb
 ### 从 crates.io 安装
 
 ```bash
-cargo install del
+cargo install better-rm
 ```
 
 ### 从源码编译

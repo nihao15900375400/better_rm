@@ -1,5 +1,5 @@
 [package]
-name = "del"
+name = "better-rm"
 version = "0.3.2"
 edition = "2024"
 description = "A safe file deletion and trash management tool with i18n support"

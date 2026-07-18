@@ -170,6 +170,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "better-rm"
+version = "0.3.2"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "clap",
+ "cliclack",
+ "crossterm 0.28.1",
+ "dirs",
+ "figment",
+ "glob",
+ "ratatui",
+ "rayon",
+ "rusqlite",
+ "rust-i18n",
+ "serde",
+ "tar",
+ "tempfile",
+ "timeago",
+ "toml",
+ "zstd",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -546,30 +570,6 @@ dependencies = [
  "darling_core",
  "quote",
  "syn 2.0.118",
-]
-
-[[package]]
-name = "del"
-version = "0.3.2"
-dependencies = [
- "anyhow",
- "blake3",
- "clap",
- "cliclack",
- "crossterm 0.28.1",
- "dirs",
- "figment",
- "glob",
- "ratatui",
- "rayon",
- "rusqlite",
- "rust-i18n",
- "serde",
- "tar",
- "tempfile",
- "timeago",
- "toml",
- "zstd",
 ]
 
 [[package]]

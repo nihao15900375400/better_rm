@@ -13,7 +13,9 @@ Instead of permanently removing files like `rm`, it archives them into a designa
 - **Configurable compression** — zstd compression level from -5 to 22
 - **Path blacklist** — built-in protection against deleting system-critical directories
 - **Force delete** — bypass the trash and use `rm` directly (`-f`)
+- **Save without deleting** — move files to trash while keeping the originals (`-s`)
 - **Interactive config editor** — edit settings via TUI (`-c`)
+- **Internationalization** — supports 9 languages, auto-detected from system locale
 
 ## Installation
 
@@ -73,6 +75,9 @@ del -c
 # Auto-clean expired archives
 del -a
 
+# Save to trash without deleting originals
+del -s file.txt
+
 # Force delete (bypass trash)
 del -f file.txt
 del -rf dir/
@@ -90,11 +95,16 @@ del -C
 | `<path>` | — | Files or directories to delete (supports multiple paths) |
 | `--trash` | `-t` | Interactive TUI trash browser and manager |
 | `--config` | `-c` | Interactive config editor |
+| `--save` | `-s` | Archive to trash without deleting original files |
 | `--recursive` | `-r` | Recursive operation (only with `--force`) |
 | `--force` | `-f` | Bypass trash, directly call system `rm` |
 | `--autoclean` | `-a` | Auto-clean archives older than saving_days |
 | `--clear` | `-C` | Clear all trash archives (with confirmation) |
 | `--verbose` | `-v` | Show detailed logs |
+| `--trash-dir` | — | Set trash directory for this run |
+| `--saving-days` | — | Set backup retention days for this run |
+| `--add-disable` | — | Add a path to the disable list for this run |
+| `--compression-level` | — | Set zstd compression level (-5 to 22) for this run |
 
 **Examples:**
 
@@ -102,26 +112,34 @@ del -C
 # Delete files (move to trash)
 del a.txt b/
 
+# Save to trash without deleting
+del -s important.txt
+
 # Force permanently delete
 del -f secret.txt
 
 # Force recursively delete a directory (equivalent to rm -rf)
 del -rf tempdir/
 
-# Open the TUI trash browser to browse/search/restore/delete entries
+# Open the TUI trash browser
 del -t
 
 # Open the interactive config editor
 del -c
 
-# Auto-clean archives older than the configured saving_days
+# Auto-clean expired archives
 del -a
 
-# Clear the entire trash
+# Clear the entire trash (requires confirmation)
 del -C
 
 # Delete with verbose logging
 del -v large_project/
+
+# Override config for a single run
+del --trash-dir /tmp/mytrash --saving-days 7 large_project/
+del --compression-level 1 file.txt
+del --add-disable /important/docs/
 ```
 
 ## Configuration
@@ -144,6 +162,28 @@ compression_level = 3
 - **`saving_days`** — auto-cleanup threshold (used by `-a`)
 - **`disable_list`** — glob patterns of paths that are protected from deletion
 - **`compression_level`** — zstd compression level (-5 to 22, default: 3)
+
+## Internationalization
+
+Del supports 9 languages. The language is automatically detected from the system `LANG` environment variable.
+
+| Language | `LANG` Example |
+|----------|---------------|
+| English | `en_US.UTF-8` |
+| Simplified Chinese | `zh_CN.UTF-8` |
+| Traditional Chinese | `zh_TW.UTF-8` |
+| Japanese | `ja_JP.UTF-8` |
+| Korean | `ko_KR.UTF-8` |
+| French | `fr_FR.UTF-8` |
+| Spanish | `es_ES.UTF-8` |
+| Russian | `ru_RU.UTF-8` |
+| Arabic | `ar_SA.UTF-8` |
+
+To override the system locale:
+
+```bash
+RUST_I18N_LOCALE=ja del -h
+```
 
 ## Safety
 

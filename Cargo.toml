@@ -2,6 +2,12 @@
 name = "del"
 version = "0.3.2"
 edition = "2024"
+description = "A safe file deletion and trash management tool with i18n support"
+license = "MulanPSL-2.0"
+repository = "https://github.com/ywnh1/del"
+readme = "README.md"
+keywords = ["trash", "delete", "safe", "rm", "trash-management"]
+categories = ["command-line-utilities", "filesystem"]
 
 [dependencies]
 anyhow = "1.0.102"

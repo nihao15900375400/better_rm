@@ -52,6 +52,12 @@ sudo dpkg -i del_0.3.2_amd64.deb
 sudo dpkg -i del_0.3.2_arm64.deb
 ```
 
+### Install from crates.io
+
+```bash
+cargo install del
+```
+
 ### Build from source
 
 ```bash

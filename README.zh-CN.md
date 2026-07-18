@@ -25,10 +25,10 @@
 |------|------|------|
 | 二进制 | x86_64 | `del_x86_64`（静态链接） |
 | 二进制 | ARM64 | `del_arm64`（静态链接） |
-| Deb 包 | x86_64 | `del_0.3.2_amd64.deb` |
-| Deb 包 | ARM64 | `del_0.3.2_arm64.deb` |
-| tar.xz | x86_64 | `del_0.3.2_x86_64.tar.xz` |
-| tar.xz | ARM64 | `del_0.3.2_arm64.tar.xz` |
+| Deb 包 | x86_64 | `del_0.3.3_amd64.deb` |
+| Deb 包 | ARM64 | `del_0.3.3_arm64.deb` |
+| tar.xz | x86_64 | `del_0.3.3_x86_64.tar.xz` |
+| tar.xz | ARM64 | `del_0.3.3_arm64.tar.xz` |
 
 **直接使用二进制**（无需安装依赖）：
 
@@ -46,10 +46,10 @@ chmod +x del_arm64
 
 ```bash
 # x86_64
-sudo dpkg -i del_0.3.2_amd64.deb
+sudo dpkg -i del_0.3.3_amd64.deb
 
 # ARM64
-sudo dpkg -i del_0.3.2_arm64.deb
+sudo dpkg -i del_0.3.3_arm64.deb
 ```
 
 ### 从 crates.io 安装

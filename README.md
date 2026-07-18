@@ -25,10 +25,10 @@ Instead of permanently removing files like `rm`, it archives them into a designa
 |---------|-------------|------|
 | Binary | x86_64 | `del_x86_64` (statically linked) |
 | Binary | ARM64 | `del_arm64` (statically linked) |
-| Deb | x86_64 | `del_0.3.2_amd64.deb` |
-| Deb | ARM64 | `del_0.3.2_arm64.deb` |
-| tar.xz | x86_64 | `del_0.3.2_x86_64.tar.xz` |
-| tar.xz | ARM64 | `del_0.3.2_arm64.tar.xz` |
+| Deb | x86_64 | `del_0.3.3_amd64.deb` |
+| Deb | ARM64 | `del_0.3.3_arm64.deb` |
+| tar.xz | x86_64 | `del_0.3.3_x86_64.tar.xz` |
+| tar.xz | ARM64 | `del_0.3.3_arm64.tar.xz` |
 
 **Using the binary directly** (no dependencies required):
 
@@ -46,10 +46,10 @@ chmod +x del_arm64
 
 ```bash
 # x86_64
-sudo dpkg -i del_0.3.2_amd64.deb
+sudo dpkg -i del_0.3.3_amd64.deb
 
 # ARM64
-sudo dpkg -i del_0.3.2_arm64.deb
+sudo dpkg -i del_0.3.3_arm64.deb
 ```
 
 ### Install from crates.io

@@ -283,7 +283,7 @@ fn delete(
             safe_log!("{}", t!("message.packing", path = p));
             let res = pack::pack(path, trash_dir, level).unwrap();
             if save {
-                safe_log!("{p} won't be delete");
+                safe_log!("{}", t!("message.saved", path = p));
             } else {
                 safe_log!("{}", t!("message.removing", path = p));
                 if path.is_file() {

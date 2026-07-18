@@ -1,18 +1,8 @@
-// Copyright (c) 2026 ywnh1
-// del is licensed under Mulan PSL v2.
-// You can use this software according to the terms and conditions of the Mulan
-// PSL v2.
-// You may obtain a copy of Mulan PSL v2 at:
-//          http://license.coscl.org.cn/MulanPSL2
-// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY
-// KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-// NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-// See the Mulan PSL v2 for more details.
-//
 use crate::sql::Trash;
 use crate::util::file_size;
 use anyhow::{Result, bail};
 use blake3::Hasher;
+use rust_i18n::t;
 use std::fs::File;
 use std::io;
 use std::path::Path;
@@ -39,16 +29,16 @@ pub fn pack(src: &Path, trash_dir: &Path, level: i32) -> Result<Trash> {
             if src.is_file() {
                 let name = src
                     .file_name()
-                    .ok_or_else(|| anyhow::anyhow!("{} has no file name", src.display()))?;
+                    .ok_or_else(|| anyhow::anyhow!("{}", t!("error.no_hash", path = src.display().to_string())))?;
                 let mut file = File::open(src)?;
                 builder.append_file(name, &mut file)?;
             } else if src.is_dir() {
                 let name = src
                     .file_name()
-                    .ok_or_else(|| anyhow::anyhow!("{} has no file name", src.display()))?;
+                    .ok_or_else(|| anyhow::anyhow!("{}", t!("error.no_hash", path = src.display().to_string())))?;
                 builder.append_dir_all(name, src)?;
             } else {
-                bail!("{} is neither a file nor a directory", src.display());
+                bail!("{}", t!("error.not_file_dir", path = src.display().to_string()));
             }
 
             builder.finish()?;
@@ -95,7 +85,7 @@ pub fn unpack(hash: &str, trash_dir: &Path, target_path: &Path) -> Result<()> {
     let mut archive = tar::Archive::new(decoder);
     let parent = target_path
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("{} has no parent directory", target_path.display()))?;
+        .ok_or_else(|| anyhow::anyhow!("{}", t!("error.no_parent", path = target_path.display().to_string())))?;
     archive.unpack(parent)?;
     Ok(())
 }

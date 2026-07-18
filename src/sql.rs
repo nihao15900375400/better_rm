@@ -1,18 +1,8 @@
-// Copyright (c) 2026 ywnh1
-// del is licensed under Mulan PSL v2.
-// You can use this software according to the terms and conditions of the Mulan
-// PSL v2.
-// You may obtain a copy of Mulan PSL v2 at:
-//          http://license.coscl.org.cn/MulanPSL2
-// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY
-// KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-// NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-// See the Mulan PSL v2 for more details.
-//
 use crate::consts::DB_PATH;
 use crate::util::*;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, params};
+use rust_i18n::t;
 use std::collections::HashSet;
 use std::io;
 use std::path::PathBuf;
@@ -36,13 +26,13 @@ impl Trash {
     pub fn to_display(&self) -> Result<TrashDisplay> {
         let name = PathBuf::from(&self.path)
             .file_name()
-            .with_context(|| "Errors while parsing file name")?
+            .with_context(|| t!("message.parse_name"))?
             .to_str()
             .unwrap_or_default()
             .to_string();
         let path = PathBuf::from(&self.path)
             .parent()
-            .with_context(|| "Errors while getting parent dir")?
+            .with_context(|| t!("message.parse_parent"))?
             .to_str()
             .unwrap_or_default()
             .to_string();
@@ -135,7 +125,7 @@ pub fn select_days_age(conn: &Connection, days: u16) -> Result<Vec<Trash>> {
     let mut res = Vec::new();
 
     for t in all {
-        let item = t.with_context(|| "Errors while reading the database")?;
+        let item = t.with_context(|| t!("message.db_read_error"))?;
         res.push(item);
     }
     Ok(res)
@@ -174,12 +164,12 @@ enum ActionChoice {
 }
 
 impl ActionChoice {
-    fn label(&self) -> &str {
+    fn label(&self) -> String {
         match self {
-            ActionChoice::Delete => "Delete selected",
-            ActionChoice::Restore => "Restore selected",
-            ActionChoice::Exit => "Exit",
-            ActionChoice::Cancel => "Cancel",
+            ActionChoice::Delete => t!("tui.del_sel").into_owned(),
+            ActionChoice::Restore => t!("tui.rest_sel").into_owned(),
+            ActionChoice::Exit => t!("tui.exit").into_owned(),
+            ActionChoice::Cancel => t!("tui.cancel").into_owned(),
         }
     }
 
@@ -201,7 +191,7 @@ struct TuiApp<'a> {
     table_state: TableState,
     search_query: String,
     action_cursor: usize,
-    help_items: Vec<(&'a str, &'a str)>,
+    help_items: Vec<(&'a str, String)>,
 }
 
 impl<'a> TuiApp<'a> {
@@ -229,16 +219,16 @@ impl<'a> TuiApp<'a> {
             search_query: String::new(),
             action_cursor: 0,
             help_items: vec![
-                ("↑/↓   j/k", "Move selection"),
-                ("PgUp/PgDn", "Scroll page"),
-                ("Home / End", "First / last item"),
-                ("Space", "Toggle selection"),
-                ("a", "Select all"),
-                ("A", "Invert selection"),
-                ("/", "Search by path"),
-                ("Enter", "Action menu"),
-                ("Esc / q", "Exit (empty result)"),
-                ("?", "Toggle help"),
+                ("\u{2191}/\u{2193}   j/k", t!("tui.move").into_owned()),
+                ("PgUp/PgDn", t!("tui.scroll").into_owned()),
+                ("Home / End", t!("tui.first_last").into_owned()),
+                ("Space", t!("tui.toggle").into_owned()),
+                ("a", t!("tui.sel_all").into_owned()),
+                ("A", t!("tui.invert").into_owned()),
+                ("/", t!("tui.search").into_owned()),
+                ("Enter", t!("tui.action").into_owned()),
+                ("Esc / q", t!("tui.exit_empty").into_owned()),
+                ("?", t!("tui.help_toggle").into_owned()),
             ],
         })
     }
@@ -413,7 +403,18 @@ fn tui_render(frame: &mut Frame, app: &TuiApp) {
         })
         .collect();
 
-    let header_cells = [" ", "Name", "Path", "Size", "Time"]
+    let header_name = t!("tui.header_name");
+    let header_path = t!("tui.header_path");
+    let header_size = t!("tui.header_size");
+    let header_time = t!("tui.header_time");
+    let header_cells = vec![
+        " ",
+        header_name.as_ref(),
+        header_path.as_ref(),
+        header_size.as_ref(),
+        header_time.as_ref(),
+    ];
+    let header_cells: Vec<Cell> = header_cells
         .iter()
         .map(|h| {
             Cell::from(
@@ -421,7 +422,7 @@ fn tui_render(frame: &mut Frame, app: &TuiApp) {
                     .alignment(Alignment::Center),
             )
         })
-        .collect::<Vec<_>>();
+        .collect();
     let header = Row::new(header_cells)
         .style(Style::default().bg(Color::DarkGray))
         .height(1);
@@ -434,6 +435,14 @@ fn tui_render(frame: &mut Frame, app: &TuiApp) {
         Constraint::Length(14),
     ];
 
+    let filtered_str = if app.filtered.len() < app.items.len() {
+        format!(" {}", t!("tui.filtered", count = app.items.len()))
+    } else {
+        String::new()
+    };
+    let plural = if app.filtered.len() == 1 { "" } else { "s" };
+    let title_text = t!("tui.title", count = app.filtered.len(), plural = plural);
+
     let table = Table::new(rows, widths)
         .header(header)
         .row_highlight_style(
@@ -442,18 +451,10 @@ fn tui_render(frame: &mut Frame, app: &TuiApp) {
                 .bg(Color::Rgb(30, 30, 50))
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol("▎")
+        .highlight_symbol("\u{258e}")
         .block(
             Block::default()
-                .title(format!(
-                    " Trash Manager ({} items{}) ",
-                    app.filtered.len(),
-                    if app.filtered.len() < app.items.len() {
-                        format!("/{} filtered", app.items.len())
-                    } else {
-                        String::new()
-                    }
-                ))
+                .title(format!(" {}{} ", title_text, filtered_str))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan)),
         );
@@ -463,14 +464,11 @@ fn tui_render(frame: &mut Frame, app: &TuiApp) {
     let status_text = match app.mode {
         TuiMode::Normal => {
             let sel = app.visible_selected().len();
-            format!(
-                " [Space]Select  [a]All  [A]Invert  [/]Search  [Enter]Action  [q]Quit  [?]Help  | {} selected",
-                sel
-            )
+            t!("tui.status_normal", count = sel)
         }
-        TuiMode::Searching => format!(" Search: {}█", app.search_query),
-        TuiMode::Help => " Help — press any key to close".to_string(),
-        TuiMode::Action => " Use ↑↓←→ to navigate, Enter to confirm".to_string(),
+        TuiMode::Searching => t!("tui.status_search", query = &app.search_query),
+        TuiMode::Help => t!("tui.status_help"),
+        TuiMode::Action => t!("tui.status_action"),
     };
     let status_bar = Paragraph::new(Line::from(Span::styled(
         status_text,
@@ -478,11 +476,12 @@ fn tui_render(frame: &mut Frame, app: &TuiApp) {
     )));
     frame.render_widget(status_bar, status_area);
 
-    // 搜索输入弹窗
+    // Search input popup
     if app.mode == TuiMode::Searching {
         let popup_area = centered_rect(50, 3, area);
+        let search_title = t!("tui.search_title");
         let search_block = Block::default()
-            .title(" Search ")
+            .title(search_title.as_ref())
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow));
         let input = Paragraph::new(app.search_query.as_str())
@@ -492,7 +491,7 @@ fn tui_render(frame: &mut Frame, app: &TuiApp) {
         frame.render_widget(input, popup_area);
     }
 
-    // 帮助弹窗
+    // Help popup
     if app.mode == TuiMode::Help {
         let popup_area = centered_rect(44, app.help_items.len() as u16 + 2, area);
         let items: Vec<Line> = app
@@ -504,12 +503,13 @@ fn tui_render(frame: &mut Frame, app: &TuiApp) {
                         format!(" {:<14}", key),
                         Style::default().fg(Color::Cyan).bold(),
                     ),
-                    Span::styled(*desc, Style::default().fg(Color::White)),
+                    Span::styled(desc, Style::default().fg(Color::White)),
                 ])
             })
             .collect();
+        let help_title = t!("tui.help_title");
         let help_block = Block::default()
-            .title(" Help ")
+            .title(help_title.as_ref())
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan));
         let help_para = Paragraph::new(items).block(help_block);
@@ -517,7 +517,7 @@ fn tui_render(frame: &mut Frame, app: &TuiApp) {
         frame.render_widget(help_para, popup_area);
     }
 
-    // Action 弹窗
+    // Action popup
     if app.mode == TuiMode::Action {
         let popup_area = centered_rect(46, 6, area);
         let cursor = app.action_cursor;
@@ -534,30 +534,32 @@ fn tui_render(frame: &mut Frame, app: &TuiApp) {
         };
         let arrow = |idx: usize| -> &str { if idx == cursor { " > " } else { "   " } };
 
+        let actions = ActionChoice::all();
         let lines = vec![
             Line::from(Span::styled(
-                format!("{}{}", arrow(0), ActionChoice::all()[0].label()),
+                format!("{}{}", arrow(0), actions[0].label()),
                 btn_style(0),
             )),
             Line::from(Span::styled(
-                format!("{}{}", arrow(1), ActionChoice::all()[1].label()),
+                format!("{}{}", arrow(1), actions[1].label()),
                 btn_style(1),
             )),
             Line::from(vec![
                 Span::styled(
-                    format!("{}{}", arrow(2), ActionChoice::all()[2].label()),
+                    format!("{}{}", arrow(2), actions[2].label()),
                     btn_style(2),
                 ),
                 Span::raw("      "),
                 Span::styled(
-                    format!("{}{}", arrow(3), ActionChoice::all()[3].label()),
+                    format!("{}{}", arrow(3), actions[3].label()),
                     btn_style(3),
                 ),
             ]),
         ];
 
+        let action_title = t!("tui.action_title");
         let action_block = Block::default()
-            .title(" Action ")
+            .title(action_title.as_ref())
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan));
         let action_para = Paragraph::new(lines)
@@ -584,13 +586,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     .split(popup_layout[1])[1]
 }
 
-/// 交互式 TUI 回收站管理器。
-/// 显示数据库中的回收站条目，支持多选、搜索、删除/恢复。
-///
-/// - **Delete selected**: 从数据库删除并返回空 Vec
-/// - **Restore selected**: 从数据库删除并返回选中项的 Trash 列表
-/// - **Exit**: 返回空 Vec
-/// - **Cancel**: 返回表格继续操作
+/// Interactive TUI trash manager.
 pub fn select_visible(conn: &mut Connection) -> Result<Vec<Trash>> {
     let mut stmt = conn.prepare("SELECT id, time, path, hash, size FROM trash")?;
     let items: Vec<Trash> = stmt
